@@ -1,0 +1,7 @@
+*.swp
+.pkg-installed
+file.txt
+pkg/
+webserver-loadtest
+src
+bin
