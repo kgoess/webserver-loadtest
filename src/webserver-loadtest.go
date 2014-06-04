@@ -36,10 +36,12 @@ type currentBars struct {
 
 func main() {
 
-    var testUrl = flag.String("url", nil, "the url you want to beat on")
+    var testUrl = flag.String("url", "", "the url you want to beat on")
+    var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
+    flag.Parse();
 
     // set up logging
-    logWriter, err := os.OpenFile("file.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    logWriter, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
     log.SetOutput(logWriter);
 
     INFO = log.New(logWriter,
@@ -144,7 +146,7 @@ func main() {
     drawBars := make(chan currentBars)
 
     go windowRunloop(toNcursesControl, exitChan, requesterChan, msgWin)
-    go requesterController(toNcursesControl, requesterChan, toBarsControl)
+    go requesterController(toNcursesControl, requesterChan, toBarsControl, *testUrl)
     go barsController(toBarsControl, drawBars)
 
     var exitStatus int
@@ -240,7 +242,7 @@ func decreaseThreads(toNcursesControl chan ncursesMsg, requesterChan chan int, w
     requesterChan <- -1
 }
 
-func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan int, toBarsControl chan int){
+func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan int, toBarsControl chan int, testUrl string){
 
 
     //var chans = []chan int
@@ -254,7 +256,7 @@ func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan in
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
                 chanId := len(chans)-1
-                go requester(toNcursesControl, shutdownChan, chanId, toBarsControl)
+                go requester(toNcursesControl, shutdownChan, chanId, toBarsControl, testUrl)
             }else if upOrDown == -1 && len(chans) > 0{
                 //send shutdown message
                 chans[len(chans)-1]  <-1
@@ -267,7 +269,7 @@ func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan in
     }
 }
 
-func requester(toNcursesControl chan ncursesMsg, shutdownChan chan int, id int, toBarsControl chan int) {
+func requester(toNcursesControl chan ncursesMsg, shutdownChan chan int, id int, toBarsControl chan int, testUrl string) {
 
     var i int64 = 0
     var shutdownNow bool = false
