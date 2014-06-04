@@ -11,6 +11,7 @@ run: build
 ifndef TESTURL
     $(error TESTURL is undefined)
 endif
+	cat /dev/null > loadtest.log
 	./$(TARGET) --url $(TESTURL)
 
 build: .pkg-installed $(SRC)
