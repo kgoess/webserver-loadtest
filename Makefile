@@ -8,7 +8,10 @@ GOFILE=$(TARGET).go
 default: run
 
 run: build
-	./$(TARGET)
+ifndef TESTURL
+    $(error TESTURL is undefined)
+endif
+	./$(TARGET) --url $(TESTURL)
 
 build: .pkg-installed $(TARGET)
 

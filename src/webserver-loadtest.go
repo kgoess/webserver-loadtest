@@ -9,6 +9,7 @@ import (
     "strconv"
     "net/http"
     "time"
+    "flag"
 )
 
 var (
@@ -34,6 +35,8 @@ type currentBars struct {
 }
 
 func main() {
+
+    var testUrl = flag.String("url", nil, "the url you want to beat on")
 
     // set up logging
     logWriter, err := os.OpenFile("file.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -277,8 +280,7 @@ func requester(toNcursesControl chan ncursesMsg, shutdownChan chan int, id int, 
             default:
                 i++
                 hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-                //resp, err := http.Get("http://www.goess.org/q.html")
-                 _, err := http.Get("http://www.goess.org/q.html?" + hitId)
+                 _, err := http.Get(testUrl + "?" + hitId) // TBD make that appending conditional
                 if err == nil {
                     INFO.Println(id, "/", i,  " fetch ok ", err)
                     toNcursesControl <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
