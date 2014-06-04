@@ -196,7 +196,7 @@ INFO.Println("got a drawBars msg ", msg)
                         }
                         edibleCopy[col]--
                     }else{
-                        barsWin.MovePrint(barsHeight-2-row, col+1, " ")
+                        barsWin.MovePrint(barsHeight-2-row, col+1, " ") // TBD just erase the whole screen at the beginnig
                     }
                 }
             }
@@ -308,26 +308,28 @@ func barsController(toBarsControl chan int, drawBars chan currentBars){
     for i := range requestsForSecond{
         requestsForSecond[i] = 0
     }
+    timeToRedraw := make( chan bool)
+    go func (timeToRedraw chan bool) {
+        for {
+            time.Sleep(1000 * time.Millisecond)
+            timeToRedraw <- true
+        }
+    }(timeToRedraw)
 
     for {
-        drain:
-        for {
-            select {
-            case msg := <-toBarsControl:
-                requestsForSecond[msg]++
-            default:
-                break drain
+        select {
+        case msg := <-toBarsControl:
+            requestsForSecond[msg]++
+        case <-timeToRedraw:
+            _, _, sec := time.Now().Clock()
+            sec-- // Clock goes 1 to 60, wtf?
+            sec++ // looking at the *next* second, aka 60 seconds *ago* ;-)
+            if sec >= secondsToStore {
+                sec = 0
             }
+            requestsForSecond[sec] = 0
+            drawBars <- currentBars{ requestsForSecond[:] }
         }
-        _, _, sec := time.Now().Clock()
-        sec-- // Clock goes 1 to 60, wtf?
-        sec++ // looking at the *next* second, aka 60 seconds *ago* ;-)
-        if sec > secondsToStore {
-            sec = 0
-        }
-        requestsForSecond[sec] = 0
-        drawBars <- currentBars{ requestsForSecond[:] }
-        time.Sleep(1000 * time.Millisecond)
     }
 }
 
