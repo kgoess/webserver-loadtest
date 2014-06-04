@@ -3,7 +3,7 @@
 # for your needs.
 
 TARGET=webserver-loadtest
-GOFILE=$(TARGET).go
+SRC=$(TARGET).go
 
 default: run
 
@@ -13,10 +13,10 @@ ifndef TESTURL
 endif
 	./$(TARGET) --url $(TESTURL)
 
-build: .pkg-installed $(TARGET)
+build: .pkg-installed $(SRC)
 
-$(TARGET):
-	go build src/$(GOFILE)
+$(SRC): $(TARGET)
+	go build src/$(SRC)
 
 # see README.md for details about this PKG_CONFIG_PATH
 .pkg-installed:
