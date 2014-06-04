@@ -1,6 +1,6 @@
 *.swp
 .pkg-installed
-file.txt
+loadtest.log
 pkg/
 webserver-loadtest
 bin
