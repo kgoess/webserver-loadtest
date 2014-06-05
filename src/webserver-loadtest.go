@@ -150,11 +150,11 @@ func realMain() int {
     exitCh := make(chan int)
     changeNumRequestersCh := make(chan int)
     reqMadeOnSecCh := make(chan int)
-    drawBars := make(chan currentBars)
+    barsToDrawCh := make(chan currentBars)
 
     go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
     go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, *testUrl)
-    go barsController(reqMadeOnSecCh, drawBars)
+    go barsController(reqMadeOnSecCh, barsToDrawCh)
 
     var exitStatus int
 
@@ -178,9 +178,9 @@ func realMain() int {
                 workerCountWin.NoutRefresh()
             }
             gc.Update()
-        case msg := <-drawBars:
+        case msg := <-barsToDrawCh:
             //barsWin.Erase()
-INFO.Println("got a drawBars msg ", msg)
+INFO.Println("got a barsToDrawCh msg ", msg)
             edibleCopy := make([]int, len(msg.cols))
             copy(edibleCopy, msg.cols)
             startI := len(edibleCopy)-barsWidth
@@ -309,7 +309,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
     }
 }
 
-func barsController(reqMadeOnSecCh chan int, drawBars chan currentBars){
+func barsController(reqMadeOnSecCh chan int, barsToDrawCh chan currentBars){
     var secondsToStore = 60
     var requestsForSecond [60]int  // one column for each clock second
     for i := range requestsForSecond{
@@ -335,7 +335,7 @@ func barsController(reqMadeOnSecCh chan int, drawBars chan currentBars){
                 sec = 0
             }
             requestsForSecond[sec] = 0
-            drawBars <- currentBars{ requestsForSecond[:] }
+            barsToDrawCh <- currentBars{ requestsForSecond[:] }
         }
     }
 }
