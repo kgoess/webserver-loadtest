@@ -147,12 +147,12 @@ func realMain() int {
 
     infoMsgsCh := make(chan ncursesMsg)
     exitCh := make(chan int)
-    requesterChan := make(chan int)
+    changeNumRequestersCh := make(chan int)
     toBarsControl := make(chan int)
     drawBars := make(chan currentBars)
 
-    go windowRunloop(infoMsgsCh, exitCh, requesterChan, msgWin)
-    go requesterController(infoMsgsCh, requesterChan, toBarsControl, *testUrl)
+    go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
+    go requesterController(infoMsgsCh, changeNumRequestersCh, toBarsControl, *testUrl)
     go barsController(toBarsControl, drawBars)
 
     var exitStatus int
@@ -220,7 +220,7 @@ INFO.Println("got a drawBars msg ", msg)
 }
 
 
-func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, requesterChan chan int, win *gc.Window){
+func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window){
     threadCount := 0
     for {
         switch win.GetChar() {
@@ -228,27 +228,27 @@ func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, requesterChan ch
                 exitCh <- 0
             case 's', '+', '=', gc.KEY_UP:
                 threadCount++
-                increaseThreads(infoMsgsCh, requesterChan, win, threadCount);
+                increaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount);
             case '-', gc.KEY_DOWN:
                 threadCount--
-                decreaseThreads(infoMsgsCh, requesterChan, win, threadCount);
+                decreaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount);
         }
     }
 }
 
-func increaseThreads(infoMsgsCh chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
+func increaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int ) {
     INFO.Println("increasing threads to ", threadCount)
     infoMsgsCh <- ncursesMsg{ "increasing threads", threadCount, MSG_TYPE_INFO }
-    requesterChan <- 1
+    changeNumRequestersCh <- 1
 }
 
-func decreaseThreads(infoMsgsCh chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
+func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int ) {
     INFO.Println("decreasing threads to ", threadCount)
     infoMsgsCh <- ncursesMsg{ "decreasing threads", threadCount, MSG_TYPE_INFO}
-    requesterChan <- -1
+    changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, requesterChan chan int, toBarsControl chan int, testUrl string){
+func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, toBarsControl chan int, testUrl string){
 
 
     //var chans = []chan int
@@ -257,7 +257,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, requesterChan chan int, toB
 
     for {
         select {
-        case upOrDown := <-requesterChan:
+        case upOrDown := <-changeNumRequestersCh:
             if upOrDown == 1 {
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
