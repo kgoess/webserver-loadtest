@@ -34,7 +34,14 @@ type currentBars struct {
     cols []int
 }
 
-func main() {
+// See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
+// So that defer will run propoerly
+// Remember Exit(0) is success, Exit(1) is failure
+func main(){
+    os.Exit(realMain())
+}
+
+func realMain() int {
 
     var testUrl = flag.String("url", "", "the url you want to beat on")
     var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
@@ -211,7 +218,7 @@ INFO.Println("got a drawBars msg ", msg)
     msgWin.Delete()
     gc.End()
     INFO.Println("exiting with status ", exitStatus)
-    //os.Exit(exitStatus)
+    return exitStatus
 }
 
 
