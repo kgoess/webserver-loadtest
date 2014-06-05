@@ -145,15 +145,16 @@ func realMain() int {
     // characters which must be sent
     gc.Update()
 
+    // create our various channels
     infoMsgsCh := make(chan ncursesMsg)
     exitCh := make(chan int)
     changeNumRequestersCh := make(chan int)
-    toBarsControl := make(chan int)
+    reqMadeOnSecCh := make(chan int)
     drawBars := make(chan currentBars)
 
     go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-    go requesterController(infoMsgsCh, changeNumRequestersCh, toBarsControl, *testUrl)
-    go barsController(toBarsControl, drawBars)
+    go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, *testUrl)
+    go barsController(reqMadeOnSecCh, drawBars)
 
     var exitStatus int
 
@@ -248,7 +249,7 @@ func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int,
     changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, toBarsControl chan int, testUrl string){
+func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, testUrl string){
 
 
     //var chans = []chan int
@@ -262,7 +263,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
                 chanId := len(chans)-1
-                go requester(infoMsgsCh, shutdownChan, chanId, toBarsControl, testUrl)
+                go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, testUrl)
             }else if upOrDown == -1 && len(chans) > 0{
                 //send shutdown message
                 chans[len(chans)-1]  <-1
@@ -275,7 +276,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
     }
 }
 
-func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, toBarsControl chan int, testUrl string) {
+func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, testUrl string) {
 
     var i int64 = 0
     var shutdownNow bool = false
@@ -298,7 +299,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, toBars
                 }
 
                 _, _, sec := time.Now().Clock()
-                toBarsControl <-sec
+                reqMadeOnSecCh <-sec
 
                 time.Sleep(1000 * time.Millisecond)
         }
@@ -308,7 +309,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, toBars
     }
 }
 
-func barsController(toBarsControl chan int, drawBars chan currentBars){
+func barsController(reqMadeOnSecCh chan int, drawBars chan currentBars){
     var secondsToStore = 60
     var requestsForSecond [60]int  // one column for each clock second
     for i := range requestsForSecond{
@@ -324,7 +325,7 @@ func barsController(toBarsControl chan int, drawBars chan currentBars){
 
     for {
         select {
-        case msg := <-toBarsControl:
+        case msg := <-reqMadeOnSecCh:
             requestsForSecond[msg]++
         case <-timeToRedraw:
             _, _, sec := time.Now().Clock()
