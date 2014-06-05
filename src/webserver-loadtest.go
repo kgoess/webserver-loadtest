@@ -141,12 +141,12 @@ func main() {
     gc.Update()
 
     infoMsgsCh := make(chan ncursesMsg)
-    exitChan := make(chan int)
+    exitCh := make(chan int)
     requesterChan := make(chan int)
     toBarsControl := make(chan int)
     drawBars := make(chan currentBars)
 
-    go windowRunloop(infoMsgsCh, exitChan, requesterChan, msgWin)
+    go windowRunloop(infoMsgsCh, exitCh, requesterChan, msgWin)
     go requesterController(infoMsgsCh, requesterChan, toBarsControl, *testUrl)
     go barsController(toBarsControl, drawBars)
 
@@ -203,7 +203,7 @@ INFO.Println("got a drawBars msg ", msg)
             }
             barsWin.NoutRefresh()
             gc.Update()
-        case exitStatus = <-exitChan:
+        case exitStatus = <-exitCh:
             break main
         }
     }
@@ -215,12 +215,12 @@ INFO.Println("got a drawBars msg ", msg)
 }
 
 
-func windowRunloop(infoMsgsCh chan ncursesMsg, exitChan chan int, requesterChan chan int, win *gc.Window){
+func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, requesterChan chan int, win *gc.Window){
     threadCount := 0
     for {
         switch win.GetChar() {
             case 'q':
-                exitChan <- 0
+                exitCh <- 0
             case 's', '+', '=', gc.KEY_UP:
                 threadCount++
                 increaseThreads(infoMsgsCh, requesterChan, win, threadCount);
@@ -279,7 +279,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, toBars
         select {
             case _ = <-shutdownChan:
                 INFO.Println("shutting down #", id);
-                shutdownNow = true 
+                shutdownNow = true
             default:
                 i++
                 hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
