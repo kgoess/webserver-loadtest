@@ -66,43 +66,40 @@ func realMain() int {
         log.Fatal(err)
     }
     defer gc.End()
+
     // Turn off character echo, hide the cursor and disable input buffering
     gc.Echo(false)
     gc.CBreak(true)
     gc.StartColor()
 
+    // initialize colors
     whiteOnBlack := int16(1)
     gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
     greenOnBlack := int16(2)
     gc.InitPair(greenOnBlack, gc.C_GREEN, gc.C_BLACK)
-
 
     // print startup message
     gc.Cursor(0)
     stdscr.Print("Press 'q' to exit")
     stdscr.NoutRefresh()
 
-    // Determine the center of the screen and offset those coordinates by
-    // half of the window size we are about to create. These coordinates will
-    // be used to move our window around the screen
-    //rows, cols := stdscr.MaxYX()
-    height, width := 5, 40
-    //y, x := (rows-height)/2, (cols-width)/2
-    y, x := 1, 0
+    msgHeight, msgWidth := 5, 40
+    msgY, msgX := 1, 0
 
-    // Create control window 
+    // Create message window 
     // and enable the use of the
     // keypad on it so the arrow keys are available
     var msgWin *gc.Window
-    msgWin, err = gc.NewWindow(height, width, y, x)
+    msgWin, err = gc.NewWindow(msgHeight, msgWidth, msgY, msgX)
     if err != nil {
         log.Fatal(err)
     }
     msgWin.Keypad(true)
 
+    // Create the counter window, showing how many goroutines are active
     ctrHeight, ctrWidth := 3, 7
     ctrY := 1
-    ctrX := width + 1
+    ctrX := msgWidth + 1
     var workerCountWin *gc.Window
     workerCountWin, err = gc.NewWindow(ctrHeight, ctrWidth, ctrY, ctrX)
     if err != nil {
@@ -110,8 +107,9 @@ func realMain() int {
     }
 
 
+    // Create the bars window, showing the moving display of bars
     barsHeight, barsWidth := 20, 80 // need to size this dynamically, TBD
-    barsY := height + 1
+    barsY := msgHeight + 1
     barsX := 1
     var barsWin *gc.Window
     barsWin, err = gc.NewWindow(barsHeight, barsWidth, barsY, barsX)
@@ -121,12 +119,12 @@ func realMain() int {
 
     // Clear the section of screen where the box is currently located so
     // that it is blanked by calling Erase on the window and refreshing it
-    // so that the chances are sent to the virtual screen but not actually
+    // so that the changes are sent to the virtual screen but not actually
     // output to the terminal
     //msgWin.ColorOn(whiteOnBlack)
     msgWin.Erase()
     msgWin.NoutRefresh()
-    msgWin.MoveWindow(y, x)
+    msgWin.MoveWindow(msgY, msgX)
     msgWin.Box(0, 0)
     msgWin.NoutRefresh()
 
