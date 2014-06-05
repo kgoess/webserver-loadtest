@@ -63,6 +63,7 @@ func main() {
     gc.Echo(false)
     gc.CBreak(true)
     gc.StartColor()
+
     whiteOnBlack := int16(1)
     gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
     greenOnBlack := int16(2)
@@ -139,14 +140,14 @@ func main() {
     // characters which must be sent
     gc.Update()
 
-    toNcursesControl := make(chan ncursesMsg)
+    infoMsgsCh := make(chan ncursesMsg)
     exitChan := make(chan int)
     requesterChan := make(chan int)
     toBarsControl := make(chan int)
     drawBars := make(chan currentBars)
 
-    go windowRunloop(toNcursesControl, exitChan, requesterChan, msgWin)
-    go requesterController(toNcursesControl, requesterChan, toBarsControl, *testUrl)
+    go windowRunloop(infoMsgsCh, exitChan, requesterChan, msgWin)
+    go requesterController(infoMsgsCh, requesterChan, toBarsControl, *testUrl)
     go barsController(toBarsControl, drawBars)
 
     var exitStatus int
@@ -154,7 +155,7 @@ func main() {
     main:
     for {
         select {
-        case msg := <-toNcursesControl:
+        case msg := <-infoMsgsCh:
             var row int
             if msg.msgType == MSG_TYPE_RESULT {
                 row = 1
@@ -214,7 +215,7 @@ INFO.Println("got a drawBars msg ", msg)
 }
 
 
-func windowRunloop(toNcursesControl chan ncursesMsg, exitChan chan int, requesterChan chan int, win *gc.Window){
+func windowRunloop(infoMsgsCh chan ncursesMsg, exitChan chan int, requesterChan chan int, win *gc.Window){
     threadCount := 0
     for {
         switch win.GetChar() {
@@ -222,27 +223,27 @@ func windowRunloop(toNcursesControl chan ncursesMsg, exitChan chan int, requeste
                 exitChan <- 0
             case 's', '+', '=', gc.KEY_UP:
                 threadCount++
-                increaseThreads(toNcursesControl, requesterChan, win, threadCount);
+                increaseThreads(infoMsgsCh, requesterChan, win, threadCount);
             case '-', gc.KEY_DOWN:
                 threadCount--
-                decreaseThreads(toNcursesControl, requesterChan, win, threadCount);
+                decreaseThreads(infoMsgsCh, requesterChan, win, threadCount);
         }
     }
 }
 
-func increaseThreads(toNcursesControl chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
+func increaseThreads(infoMsgsCh chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
     INFO.Println("increasing threads to ", threadCount)
-    toNcursesControl <- ncursesMsg{ "increasing threads", threadCount, MSG_TYPE_INFO }
+    infoMsgsCh <- ncursesMsg{ "increasing threads", threadCount, MSG_TYPE_INFO }
     requesterChan <- 1
 }
 
-func decreaseThreads(toNcursesControl chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
+func decreaseThreads(infoMsgsCh chan ncursesMsg, requesterChan chan int, win *gc.Window, threadCount int ) {
     INFO.Println("decreasing threads to ", threadCount)
-    toNcursesControl <- ncursesMsg{ "decreasing threads", threadCount, MSG_TYPE_INFO}
+    infoMsgsCh <- ncursesMsg{ "decreasing threads", threadCount, MSG_TYPE_INFO}
     requesterChan <- -1
 }
 
-func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan int, toBarsControl chan int, testUrl string){
+func requesterController(infoMsgsCh chan ncursesMsg, requesterChan chan int, toBarsControl chan int, testUrl string){
 
 
     //var chans = []chan int
@@ -256,7 +257,7 @@ func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan in
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
                 chanId := len(chans)-1
-                go requester(toNcursesControl, shutdownChan, chanId, toBarsControl, testUrl)
+                go requester(infoMsgsCh, shutdownChan, chanId, toBarsControl, testUrl)
             }else if upOrDown == -1 && len(chans) > 0{
                 //send shutdown message
                 chans[len(chans)-1]  <-1
@@ -269,7 +270,7 @@ func requesterController(toNcursesControl chan ncursesMsg, requesterChan chan in
     }
 }
 
-func requester(toNcursesControl chan ncursesMsg, shutdownChan chan int, id int, toBarsControl chan int, testUrl string) {
+func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, toBarsControl chan int, testUrl string) {
 
     var i int64 = 0
     var shutdownNow bool = false
@@ -285,10 +286,10 @@ func requester(toNcursesControl chan ncursesMsg, shutdownChan chan int, id int, 
                  _, err := http.Get(testUrl + "?" + hitId) // TBD make that appending conditional
                 if err == nil {
                     INFO.Println(id, "/", i,  " fetch ok ", err)
-                    toNcursesControl <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
+                    infoMsgsCh <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
                 }else{
                     ERROR.Println("http get failed: ", err)
-                    toNcursesControl <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
+                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
                 }
 
                 _, _, sec := time.Now().Clock()
