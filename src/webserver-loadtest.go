@@ -118,7 +118,7 @@ func realMain() int {
 
 
     // Create the bars window, showing the moving display of bars
-    barsHeight, barsWidth := 20, 80 // need to size this dynamically, TBD
+    barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
     barsY := msgHeight + 1
     barsX := 1
     var barsWin *gc.Window
@@ -190,8 +190,8 @@ func realMain() int {
             }
             gc.Update()
         case msg := <-barsToDrawCh:
-            //barsWin.Erase()
-INFO.Println("got a barsToDrawCh msg ", msg)
+            barsWin.Erase()
+            barsWin.Box(0, 0)
             edibleCopy := make([]int, len(msg.cols))
             copy(edibleCopy, msg.cols)
             startI := len(edibleCopy)-barsWidth
@@ -199,7 +199,7 @@ INFO.Println("got a barsToDrawCh msg ", msg)
                 startI = 0
             }
             currentSec := time.Now().Second()
-            for row := 0; row < len(edibleCopy); row++ {
+            for row := 0; row < barsHeight-2; row++ {
                 for col := range edibleCopy[ startI:len(edibleCopy) ]{
                     if edibleCopy[col] > 0 {
                         turnOffColor := int16(0)
@@ -221,9 +221,6 @@ INFO.Println("got a barsToDrawCh msg ", msg)
                             barsWin.ColorOn(whiteOnBlack)
                         }
                         edibleCopy[col]--
-                    }else{
-                        // TBD just erase the whole screen at the beginnig
-                        barsWin.MovePrint(barsHeight-2-row, col+1, " ") 
                     }
                 }
             }
