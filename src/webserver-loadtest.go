@@ -8,6 +8,7 @@ import (
      "fmt"
     "strconv"
     "net/http"
+    "net/url"
     "time"
     "flag"
 
@@ -47,12 +48,11 @@ func main(){
 
 func realMain() int {
 
-
-rand.Seed(42) // Try changing this number!
-
+    rand.Seed(time.Now().Unix())
 
     var testUrl = flag.String("url", "", "the url you want to beat on")
     var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
+    var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
     flag.Parse();
 
     // set up logging
@@ -164,7 +164,7 @@ rand.Seed(42) // Try changing this number!
     barsToDrawCh          := make(chan currentBars)
 
     go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-    go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, *testUrl)
+    go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, *testUrl, *introduceRandomFails)
     go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
 
     var exitStatus int
@@ -269,7 +269,7 @@ func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int,
     changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string){
+func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string, introduceRandomFails int){
 
 
     //var chans = []chan int
@@ -283,7 +283,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
                 chanId := len(chans)-1
-                go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, testUrl)
+                go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, testUrl, introduceRandomFails)
             }else if upOrDown == -1 && len(chans) > 0{
                 //send shutdown message
                 chans[len(chans)-1]  <-1
@@ -296,7 +296,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
     }
 }
 
-func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string) {
+func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string, introduceRandomFails int) {
 
     var i int64 = 0
     var shutdownNow bool = false
@@ -308,13 +308,14 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
                 shutdownNow = true
             default:
                 i++
-thisUrl := testUrl
-if rand.Intn(5) > 3 {
-thisUrl = testUrl + "blearg"
-}
+                thisUrl := testUrl
+                if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
+                    thisUrlStruct, _ := url.Parse(thisUrl)
+                    thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
+                    thisUrl = thisUrlStruct.String()
+                }
                 hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-//                 resp, err := http.Get(testUrl + "?" + hitId) // TBD make that appending conditional
-resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+                resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
                 sec := time.Now().Second()
                 reqMadeOnSecCh <-sec
                 if err == nil && resp.StatusCode == 200 {

@@ -4,6 +4,7 @@
 
 TARGET=webserver-loadtest
 SRC=$(TARGET).go
+RANDOM_FAILS=0
 
 default: run
 
@@ -12,7 +13,7 @@ ifndef TESTURL
     $(error TESTURL is undefined)
 endif
 	cat /dev/null > loadtest.log
-	./$(TARGET) --url $(TESTURL)
+	./$(TARGET) --url $(TESTURL) --random-fails $(RANDOM_FAILS)
 
 build: .pkg-installed $(SRC)
 
