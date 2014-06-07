@@ -298,7 +298,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
                     infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
                 }
 
-                _, _, sec := time.Now().Clock()
+                sec := time.Now().Second()
                 reqMadeOnSecCh <-sec
 
                 time.Sleep(1000 * time.Millisecond)
@@ -328,13 +328,12 @@ func barsController(reqMadeOnSecCh chan int, barsToDrawCh chan currentBars){
         case msg := <-reqMadeOnSecCh:
             requestsForSecond[msg]++
         case <-timeToRedraw:
-            _, _, sec := time.Now().Clock()
-            sec-- // Clock goes 1 to 60, wtf?
-            sec++ // looking at the *next* second, aka 60 seconds *ago* ;-)
-            if sec >= secondsToStore {
-                sec = 0
+            // zero out the *next* second, aka 60 seconds *ago* ;-)1
+            nextSec := time.Now().Second() + 1
+            if nextSec >= secondsToStore {
+                nextSec = 0
             }
-            requestsForSecond[sec] = 0
+            requestsForSecond[nextSec] = 0
             barsToDrawCh <- currentBars{ requestsForSecond[:] }
         }
     }
