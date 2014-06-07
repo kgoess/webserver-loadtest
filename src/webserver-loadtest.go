@@ -316,6 +316,7 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
                 }
                 hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
                 resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+                resp.Body.Close()
                 sec := time.Now().Second()
                 reqMadeOnSecCh <-sec
                 if err == nil && resp.StatusCode == 200 {
