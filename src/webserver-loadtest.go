@@ -10,6 +10,9 @@ import (
     "net/http"
     "time"
     "flag"
+
+    "math/rand"
+
 )
 
 var (
@@ -32,6 +35,7 @@ type ncursesMsg struct {
 
 type currentBars struct {
     cols []int
+    failCols []int
 }
 
 // See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
@@ -42,6 +46,10 @@ func main(){
 }
 
 func realMain() int {
+
+
+rand.Seed(42) // Try changing this number!
+
 
     var testUrl = flag.String("url", "", "the url you want to beat on")
     var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
@@ -77,6 +85,8 @@ func realMain() int {
     gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
     greenOnBlack := int16(2)
     gc.InitPair(greenOnBlack, gc.C_GREEN, gc.C_BLACK)
+    redOnBlack := int16(3)
+    gc.InitPair(redOnBlack, gc.C_RED, gc.C_BLACK)
 
     // print startup message
     gc.Cursor(0)
@@ -146,15 +156,16 @@ func realMain() int {
     gc.Update()
 
     // create our various channels
-    infoMsgsCh := make(chan ncursesMsg)
-    exitCh := make(chan int)
+    infoMsgsCh            := make(chan ncursesMsg)
+    exitCh                := make(chan int)
     changeNumRequestersCh := make(chan int)
-    reqMadeOnSecCh := make(chan int)
-    barsToDrawCh := make(chan currentBars)
+    reqMadeOnSecCh        := make(chan int)
+    failsOnSecCh          := make(chan int)
+    barsToDrawCh          := make(chan currentBars)
 
     go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-    go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, *testUrl)
-    go barsController(reqMadeOnSecCh, barsToDrawCh)
+    go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, *testUrl)
+    go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
 
     var exitStatus int
 
@@ -187,23 +198,32 @@ INFO.Println("got a barsToDrawCh msg ", msg)
             if startI < 0{
                 startI = 0
             }
-            _, _, sec := time.Now().Clock()
-            sec--
+            currentSec := time.Now().Second()
             for row := 0; row < len(edibleCopy); row++ {
                 for col := range edibleCopy[ startI:len(edibleCopy) ]{
                     if edibleCopy[col] > 0 {
-                        if col == sec {
+                        turnOffColor := int16(0)
+                        currChar := "="
+                        if msg.failCols[col] > row { 
+                            barsWin.ColorOff(whiteOnBlack)
+                            barsWin.ColorOn(redOnBlack)
+                            currChar = "x"
+                            turnOffColor = redOnBlack
+
+                        }else if col == currentSec {
                             barsWin.ColorOff(whiteOnBlack)
                             barsWin.ColorOn(greenOnBlack)
+                            turnOffColor = greenOnBlack
                         }
-                        barsWin.MovePrint(barsHeight-2-row, col+1, "=")
-                        if col == sec {
-                            barsWin.ColorOff(greenOnBlack)
+                        barsWin.MovePrint(barsHeight-2-row, col+1, currChar)
+                        if turnOffColor != 0  {
+                            barsWin.ColorOff(turnOffColor)
                             barsWin.ColorOn(whiteOnBlack)
                         }
                         edibleCopy[col]--
                     }else{
-                        barsWin.MovePrint(barsHeight-2-row, col+1, " ") // TBD just erase the whole screen at the beginnig
+                        // TBD just erase the whole screen at the beginnig
+                        barsWin.MovePrint(barsHeight-2-row, col+1, " ") 
                     }
                 }
             }
@@ -249,7 +269,7 @@ func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int,
     changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, testUrl string){
+func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string){
 
 
     //var chans = []chan int
@@ -263,7 +283,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
                 chanId := len(chans)-1
-                go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, testUrl)
+                go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, testUrl)
             }else if upOrDown == -1 && len(chans) > 0{
                 //send shutdown message
                 chans[len(chans)-1]  <-1
@@ -276,7 +296,7 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
     }
 }
 
-func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, testUrl string) {
+func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, testUrl string) {
 
     var i int64 = 0
     var shutdownNow bool = false
@@ -288,18 +308,28 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
                 shutdownNow = true
             default:
                 i++
+thisUrl := testUrl
+if rand.Intn(5) > 3 {
+thisUrl = testUrl + "blearg"
+}
                 hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-                 _, err := http.Get(testUrl + "?" + hitId) // TBD make that appending conditional
-                if err == nil {
-                    INFO.Println(id, "/", i,  " fetch ok ", err)
-                    infoMsgsCh <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
-                }else{
-                    ERROR.Println("http get failed: ", err)
-                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
-                }
-
+//                 resp, err := http.Get(testUrl + "?" + hitId) // TBD make that appending conditional
+resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
                 sec := time.Now().Second()
                 reqMadeOnSecCh <-sec
+                if err == nil && resp.StatusCode == 200 {
+                    INFO.Println(id, "/", i,  " fetch ok ")
+                    infoMsgsCh <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
+                }else if err != nil {
+                    ERROR.Println("http get failed: ", err)
+                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
+                    failsOnSecCh <- sec
+                }else{
+                    ERROR.Println("http get failed: ", resp.Status)
+                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
+                    failsOnSecCh <- sec
+                }
+
 
                 time.Sleep(1000 * time.Millisecond)
         }
@@ -309,9 +339,10 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
     }
 }
 
-func barsController(reqMadeOnSecCh chan int, barsToDrawCh chan currentBars){
+func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh chan currentBars){
     var secondsToStore = 60
     var requestsForSecond [60]int  // one column for each clock second
+    var failsForSecond [60]int  // one column for each clock second
     for i := range requestsForSecond{
         requestsForSecond[i] = 0
     }
@@ -327,6 +358,8 @@ func barsController(reqMadeOnSecCh chan int, barsToDrawCh chan currentBars){
         select {
         case msg := <-reqMadeOnSecCh:
             requestsForSecond[msg]++
+        case msg := <-failsOnSecCh:
+            failsForSecond[msg]++
         case <-timeToRedraw:
             // zero out the *next* second, aka 60 seconds *ago* ;-)1
             nextSec := time.Now().Second() + 1
@@ -334,7 +367,8 @@ func barsController(reqMadeOnSecCh chan int, barsToDrawCh chan currentBars){
                 nextSec = 0
             }
             requestsForSecond[nextSec] = 0
-            barsToDrawCh <- currentBars{ requestsForSecond[:] }
+            failsForSecond[nextSec] = 0
+            barsToDrawCh <- currentBars{ requestsForSecond[:], failsForSecond[:] }
         }
     }
 }
