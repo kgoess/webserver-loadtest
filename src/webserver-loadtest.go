@@ -39,24 +39,27 @@ type currentBars struct {
     failCols []int
 }
 
+var testUrl = flag.String("url", "", "the url you want to beat on")
+var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
+var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
+
 // See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
 // So that defer will run propoerly
 // Remember Exit(0) is success, Exit(1) is failure
 func main(){
-    os.Exit(realMain())
-}
-
-func realMain() int {
-
-    rand.Seed(time.Now().Unix())
-
-    var testUrl = flag.String("url", "", "the url you want to beat on")
-    var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
-    var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
     flag.Parse();
+    if len(*testUrl) == 0 {
+        flag.Usage()
+        os.Exit(1)
+    }
+    rand.Seed(time.Now().Unix())
 
     // set up logging
     logWriter, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        println(err)
+        os.Exit(1)
+    }
     log.SetOutput(logWriter);
 
     INFO = log.New(logWriter,
@@ -67,6 +70,10 @@ func realMain() int {
             log.Ldate|log.Ltime|log.Lshortfile)
     INFO.Println("beginning run")
 
+    os.Exit(realMain())
+}
+
+func realMain() int {
 
     // initialize ncurses
     stdscr, err := gc.Init()
