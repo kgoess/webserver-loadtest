@@ -4,16 +4,15 @@ import (
     gc "code.google.com/p/goncurses"
     "log"
     //"io"
-     "os"
-     "fmt"
-    "strconv"
+    "flag"
+    "fmt"
     "net/http"
     "net/url"
+    "os"
+    "strconv"
     "time"
-    "flag"
 
     "math/rand"
-
 )
 
 var (
@@ -29,13 +28,13 @@ const (
 )
 
 type ncursesMsg struct {
-    msgStr string
+    msgStr       string
     currentCount int
-    msgType int
+    msgType      int
 }
 
 type currentBars struct {
-    cols []int
+    cols     []int
     failCols []int
 }
 
@@ -46,8 +45,8 @@ var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random fa
 // See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
 // So that defer will run propoerly
 // Remember Exit(0) is success, Exit(1) is failure
-func main(){
-    flag.Parse();
+func main() {
+    flag.Parse()
     if len(*testUrl) == 0 {
         flag.Usage()
         os.Exit(1)
@@ -60,14 +59,14 @@ func main(){
         println(err)
         os.Exit(1)
     }
-    log.SetOutput(logWriter);
+    log.SetOutput(logWriter)
 
     INFO = log.New(logWriter,
-            "INFO: ",
-            log.Ldate|log.Ltime|log.Lshortfile)
+        "INFO: ",
+        log.Ldate|log.Ltime|log.Lshortfile)
     ERROR = log.New(logWriter,
-            "ERROR: ",
-            log.Ldate|log.Ltime|log.Lshortfile)
+        "ERROR: ",
+        log.Ldate|log.Ltime|log.Lshortfile)
     INFO.Println("beginning run")
 
     os.Exit(realMain())
@@ -103,7 +102,7 @@ func realMain() int {
     msgHeight, msgWidth := 5, 40
     msgY, msgX := 1, 0
 
-    // Create message window 
+    // Create message window
     // and enable the use of the
     // keypad on it so the arrow keys are available
     var msgWin *gc.Window
@@ -177,14 +176,14 @@ func realMain() int {
     gc.Update()
 
     // create our various channels
-    infoMsgsCh            := make(chan ncursesMsg)
-    exitCh                := make(chan int)
+    infoMsgsCh := make(chan ncursesMsg)
+    exitCh := make(chan int)
     changeNumRequestersCh := make(chan int)
-    reqMadeOnSecCh        := make(chan int)
-    failsOnSecCh          := make(chan int)
-    durationCh            := make(chan int64)
-    durationDisplayCh     := make(chan string)
-    barsToDrawCh          := make(chan currentBars)
+    reqMadeOnSecCh := make(chan int)
+    failsOnSecCh := make(chan int)
+    durationCh := make(chan int64)
+    durationDisplayCh := make(chan string)
+    barsToDrawCh := make(chan currentBars)
 
     go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
     go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
@@ -193,16 +192,16 @@ func realMain() int {
 
     var exitStatus int
 
-    main:
+main:
     for {
         select {
         case msg := <-infoMsgsCh:
             var row int
             if msg.msgType == MSG_TYPE_RESULT {
                 row = 1
-            }else if msg.msgType == MSG_TYPE_INFO {
+            } else if msg.msgType == MSG_TYPE_INFO {
                 row = 2
-            }else{
+            } else {
                 row = 3
             }
             msgWin.MovePrint(row, 1, fmt.Sprintf("%-40s", msg.msgStr))
@@ -214,38 +213,38 @@ func realMain() int {
             }
             gc.Update()
         case msg := <-durationDisplayCh:
-                // that %7s should be determined from durWidth
-                durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
-                INFO.Println("got durationDisplayCh msg ", msg)
-                durWin.NoutRefresh()
+            // that %7s should be determined from durWidth
+            durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+            INFO.Println("got durationDisplayCh msg ", msg)
+            durWin.NoutRefresh()
         case msg := <-barsToDrawCh:
             barsWin.Erase()
             barsWin.Box(0, 0)
             edibleCopy := make([]int, len(msg.cols))
             copy(edibleCopy, msg.cols)
-            startI := len(edibleCopy)-barsWidth
-            if startI < 0{
+            startI := len(edibleCopy) - barsWidth
+            if startI < 0 {
                 startI = 0
             }
             currentSec := time.Now().Second()
             for row := 0; row < barsHeight-2; row++ {
-                for col := range edibleCopy[ startI:len(edibleCopy) ]{
+                for col := range edibleCopy[startI:len(edibleCopy)] {
                     if edibleCopy[col] > 0 {
                         turnOffColor := int16(0)
                         currChar := "="
-                        if msg.failCols[col] > row { 
+                        if msg.failCols[col] > row {
                             barsWin.ColorOff(whiteOnBlack)
                             barsWin.ColorOn(redOnBlack)
                             currChar = "x"
                             turnOffColor = redOnBlack
 
-                        }else if col == currentSec {
+                        } else if col == currentSec {
                             barsWin.ColorOff(whiteOnBlack)
                             barsWin.ColorOn(greenOnBlack)
                             turnOffColor = greenOnBlack
                         }
                         barsWin.MovePrint(barsHeight-2-row, col+1, currChar)
-                        if turnOffColor != 0  {
+                        if turnOffColor != 0 {
                             barsWin.ColorOff(turnOffColor)
                             barsWin.ColorOn(whiteOnBlack)
                         }
@@ -257,7 +256,7 @@ func realMain() int {
             gc.Update()
         case exitStatus = <-exitCh:
             break main
-        case  durationMs := <-durationCh:
+        case durationMs := <-durationCh:
             INFO.Println("got a duration thing ", durationMs)
         }
     }
@@ -268,37 +267,35 @@ func realMain() int {
     return exitStatus
 }
 
-
-func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window){
+func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window) {
     threadCount := 0
     for {
         switch win.GetChar() {
-            case 'q':
-                exitCh <- 0
-            case 's', '+', '=', gc.KEY_UP:
-                threadCount++
-                increaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount);
-            case '-', gc.KEY_DOWN:
-                threadCount--
-                decreaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount);
+        case 'q':
+            exitCh <- 0
+        case 's', '+', '=', gc.KEY_UP:
+            threadCount++
+            increaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount)
+        case '-', gc.KEY_DOWN:
+            threadCount--
+            decreaseThreads(infoMsgsCh, changeNumRequestersCh, win, threadCount)
         }
     }
 }
 
-func increaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int ) {
+func increaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int) {
     INFO.Println("increasing threads to ", threadCount)
-    infoMsgsCh <- ncursesMsg{ "increasing threads", threadCount, MSG_TYPE_INFO }
+    infoMsgsCh <- ncursesMsg{"increasing threads", threadCount, MSG_TYPE_INFO}
     changeNumRequestersCh <- 1
 }
 
-func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int ) {
+func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int) {
     INFO.Println("decreasing threads to ", threadCount)
-    infoMsgsCh <- ncursesMsg{ "decreasing threads", threadCount, MSG_TYPE_INFO}
+    infoMsgsCh <- ncursesMsg{"decreasing threads", threadCount, MSG_TYPE_INFO}
     changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64, testUrl string, introduceRandomFails int){
-
+func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64, testUrl string, introduceRandomFails int) {
 
     //var chans = []chan int
     // this creates a slice associated with an underlying array
@@ -310,61 +307,61 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
             if upOrDown == 1 {
                 shutdownChan := make(chan int)
                 chans = append(chans, shutdownChan)
-                chanId := len(chans)-1
+                chanId := len(chans) - 1
                 go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, durationCh, testUrl, introduceRandomFails)
-            }else if upOrDown == -1 && len(chans) > 0{
+            } else if upOrDown == -1 && len(chans) > 0 {
                 //send shutdown message
-                chans[len(chans)-1]  <-1
+                chans[len(chans)-1] <- 1
                 // throw away that channel
-                chans = chans[0:len(chans)-1]
-            }else{
+                chans = chans[0 : len(chans)-1]
+            } else {
                 INFO.Println("ignoring decrease--there aren't any channels")
             }
         }
     }
 }
 
-func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64,  testUrl string, introduceRandomFails int) {
+func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64, testUrl string, introduceRandomFails int) {
 
     var i int64 = 0
     var shutdownNow bool = false
 
     for {
         select {
-            case _ = <-shutdownChan:
-                INFO.Println("shutting down #", id);
-                shutdownNow = true
-            default:
-                i++
-                thisUrl := testUrl
-                if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
-                    thisUrlStruct, _ := url.Parse(thisUrl)
-                    thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
-                    thisUrl = thisUrlStruct.String()
-                }
-                hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-                t0 := time.Now()
-                resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
-                t1 := time.Now()
-                resp.Body.Close()
-                durationCh <- int64(t1.Sub(t0)/time.Millisecond)
-                nowSec := time.Now().Second()
-                reqMadeOnSecCh <-nowSec
-                if err == nil && resp.StatusCode == 200 {
-                    INFO.Println(id, "/", i,  " fetch ok ")
-                    infoMsgsCh <- ncursesMsg{ "request ok " + hitId, -1, MSG_TYPE_RESULT }
-                }else if err != nil {
-                    ERROR.Println("http get failed: ", err)
-                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
-                    failsOnSecCh <- nowSec
-                }else{
-                    ERROR.Println("http get failed: ", resp.Status)
-                    infoMsgsCh <- ncursesMsg{ "request fail " + hitId, -1, MSG_TYPE_RESULT }
-                    failsOnSecCh <- nowSec
-                }
+        case _ = <-shutdownChan:
+            INFO.Println("shutting down #", id)
+            shutdownNow = true
+        default:
+            i++
+            thisUrl := testUrl
+            if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
+                thisUrlStruct, _ := url.Parse(thisUrl)
+                thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
+                thisUrl = thisUrlStruct.String()
+            }
+            hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
+            t0 := time.Now()
+            resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+            t1 := time.Now()
+            resp.Body.Close()
+            durationCh <- int64(t1.Sub(t0) / time.Millisecond)
+            nowSec := time.Now().Second()
+            reqMadeOnSecCh <- nowSec
+            if err == nil && resp.StatusCode == 200 {
+                INFO.Println(id, "/", i, " fetch ok ")
+                infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
+            } else if err != nil {
+                ERROR.Println("http get failed: ", err)
+                infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+                failsOnSecCh <- nowSec
+            } else {
+                ERROR.Println("http get failed: ", resp.Status)
+                infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+                failsOnSecCh <- nowSec
+            }
 
-                // just for development
-                time.Sleep(1000 * time.Millisecond)
+            // just for development
+            time.Sleep(1000 * time.Millisecond)
         }
         if shutdownNow {
             return
@@ -372,15 +369,15 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
     }
 }
 
-func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh chan currentBars){
+func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh chan currentBars) {
     var secondsToStore = 60
-    var requestsForSecond [60]int  // one column for each clock second
-    var failsForSecond [60]int  // one column for each clock second
-    for i := range requestsForSecond{
+    var requestsForSecond [60]int // one column for each clock second
+    var failsForSecond [60]int    // one column for each clock second
+    for i := range requestsForSecond {
         requestsForSecond[i] = 0
     }
-    timeToRedraw := make( chan bool)
-    go func (timeToRedraw chan bool) {
+    timeToRedraw := make(chan bool)
+    go func(timeToRedraw chan bool) {
         for {
             time.Sleep(1000 * time.Millisecond)
             timeToRedraw <- true
@@ -401,20 +398,20 @@ func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh
             }
             requestsForSecond[nextSec] = 0
             failsForSecond[nextSec] = 0
-            barsToDrawCh <- currentBars{ requestsForSecond[:], failsForSecond[:] }
+            barsToDrawCh <- currentBars{requestsForSecond[:], failsForSecond[:]}
         }
     }
 }
 
-func durWinController(durationCh chan int64, durationDisplayCh chan string){
-    var totalDurForSecond [60]int64  // total durations for each clock second
-    var countForSecond [60]int64 // how many received per second
+func durWinController(durationCh chan int64, durationDisplayCh chan string) {
+    var totalDurForSecond [60]int64 // total durations for each clock second
+    var countForSecond [60]int64    // how many received per second
     //var averagesArr [60]float64
     window := 3
     //var averages []float64 = averagesArr[0:window]
 
-    timeToRedraw := make( chan bool)
-    go func (timeToRedraw chan bool) {
+    timeToRedraw := make(chan bool)
+    go func(timeToRedraw chan bool) {
         for {
             time.Sleep(1000 * time.Millisecond)
             timeToRedraw <- true
@@ -433,18 +430,18 @@ func durWinController(durationCh chan int64, durationDisplayCh chan string){
 
             var windowDur int64
             var windowCount int64
-            for i := currSec - window; i < currSec ; i++  {
+            for i := currSec - window; i < currSec; i++ {
                 index := i
                 if index < 0 {
                     index += 60
                 }
-                windowDur   += totalDurForSecond[index]
+                windowDur += totalDurForSecond[index]
                 windowCount += countForSecond[index]
             }
             if windowCount > 0 {
-INFO.Println("windowDur is " , windowDur, " and windowCount is ", windowCount, " so avg is ", float64(windowDur)/float64(windowCount))
-                durationDisplayCh <-fmt.Sprintf("%4.2f", float64(windowDur)/float64(windowCount))
-            }else{
+                INFO.Println("windowDur is ", windowDur, " and windowCount is ", windowCount, " so avg is ", float64(windowDur)/float64(windowCount))
+                durationDisplayCh <- fmt.Sprintf("%4.2f", float64(windowDur)/float64(windowCount))
+            } else {
                 durationDisplayCh <- "0"
             }
             nextSec := time.Now().Second() + 1
@@ -455,7 +452,7 @@ INFO.Println("windowDur is " , windowDur, " and windowCount is ", windowCount, "
             countForSecond[nextSec] = 0
         }
     }
-} 
+}
 
 /*
 259 up
@@ -464,4 +461,3 @@ INFO.Println("windowDur is " , windowDur, " and windowCount is ", windowCount, "
 43 shift plus
 45 minus
 */
-
