@@ -116,7 +116,7 @@ func realMain() int {
 	ctrHeight, ctrWidth := 3, 7
 	ctrY := 2
 	ctrX := msgWidth + 1
-	stdscr.MovePrint(1, ctrX + 1, "thrds")
+	stdscr.MovePrint(1, ctrX+1, "thrds")
 	stdscr.NoutRefresh()
 	var workerCountWin *gc.Window
 	workerCountWin, err = gc.NewWindow(ctrHeight, ctrWidth, ctrY, ctrX)
@@ -128,18 +128,18 @@ func realMain() int {
 	durHeight, durWidth := 3, 9
 	durY := 2
 	durX := ctrX + ctrWidth + 1
-	stdscr.MovePrint(1, durX + 1, "av dur")
+	stdscr.MovePrint(1, durX+1, "av dur")
 	stdscr.NoutRefresh()
 	var statsWin *gc.Window
 	statsWin, err = gc.NewWindow(durHeight, durWidth, durY, durX)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Create the requests/sec window, 
+	// Create the requests/sec window,
 	reqSecHeight, reqSecWidth := 3, 9
 	reqSecY := 2
 	reqSecX := durX + durWidth + 1
-	stdscr.MovePrint(1, reqSecX + 1, "req/s")
+	stdscr.MovePrint(1, reqSecX+1, "req/s")
 	stdscr.NoutRefresh()
 	var reqSecWin *gc.Window
 	reqSecWin, err = gc.NewWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
