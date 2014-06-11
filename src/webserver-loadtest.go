@@ -166,7 +166,15 @@ func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
 	return
 }
 
-func drawDisplay(stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Window, durWin *gc.Window, reqSecWin *gc.Window, barsWin *gc.Window) {
+func drawDisplay(
+	stdscr *gc.Window,
+) (
+	msgWin *gc.Window,
+	workerCountWin *gc.Window,
+	durWin *gc.Window,
+	reqSecWin *gc.Window,
+	barsWin *gc.Window,
+) {
 
 	// print startup message
 	stdscr.Print("Press 'q' to exit")
@@ -296,7 +304,12 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 	barsWin.NoutRefresh()
 }
 
-func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window) {
+func windowRunloop(
+	infoMsgsCh chan ncursesMsg,
+	exitCh chan int,
+	changeNumRequestersCh chan int,
+	win *gc.Window,
+) {
 	threadCount := 0
 	for {
 		switch win.GetChar() {
@@ -312,19 +325,37 @@ func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequest
 	}
 }
 
-func increaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int) {
+func increaseThreads(
+	infoMsgsCh chan ncursesMsg,
+	changeNumRequestersCh chan int,
+	win *gc.Window,
+	threadCount int,
+) {
 	INFO.Println("increasing threads to ", threadCount)
 	infoMsgsCh <- ncursesMsg{"increasing threads", threadCount, MSG_TYPE_INFO}
 	changeNumRequestersCh <- 1
 }
 
-func decreaseThreads(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, win *gc.Window, threadCount int) {
+func decreaseThreads(
+	infoMsgsCh chan ncursesMsg,
+	changeNumRequestersCh chan int,
+	win *gc.Window,
+	threadCount int,
+) {
 	INFO.Println("decreasing threads to ", threadCount)
 	infoMsgsCh <- ncursesMsg{"decreasing threads", threadCount, MSG_TYPE_INFO}
 	changeNumRequestersCh <- -1
 }
 
-func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64, testUrl string, introduceRandomFails int) {
+func requesterController(
+	infoMsgsCh chan ncursesMsg,
+	changeNumRequestersCh chan int,
+	reqMadeOnSecCh chan int,
+	failsOnSecCh chan int,
+	durationCh chan int64,
+	testUrl string,
+	introduceRandomFails int,
+) {
 
 	//var chans = []chan int
 	// this creates a slice associated with an underlying array
@@ -350,7 +381,16 @@ func requesterController(infoMsgsCh chan ncursesMsg, changeNumRequestersCh chan 
 	}
 }
 
-func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMadeOnSecCh chan int, failsOnSecCh chan int, durationCh chan int64, testUrl string, introduceRandomFails int) {
+func requester(
+	infoMsgsCh chan ncursesMsg,
+	shutdownChan chan int,
+	id int,
+	reqMadeOnSecCh chan int,
+	failsOnSecCh chan int,
+	durationCh chan int64,
+	testUrl string,
+	introduceRandomFails int,
+) {
 
 	var i int64 = 0
 	var shutdownNow bool = false
@@ -398,7 +438,11 @@ func requester(infoMsgsCh chan ncursesMsg, shutdownChan chan int, id int, reqMad
 	}
 }
 
-func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh chan currentBars) {
+func barsController(
+	reqMadeOnSecCh chan int,
+	failsOnSecCh chan int,
+	barsToDrawCh chan currentBars,
+) {
 	var secondsToStore = 60
 	var requestsForSecond [60]int // one column for each clock second
 	var failsForSecond [60]int    // one column for each clock second
@@ -432,7 +476,12 @@ func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh
 	}
 }
 
-func statsWinsController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
+func statsWinsController(
+	durationCh chan int64,
+	durationDisplayCh chan string,
+	reqSecCh chan int64,
+	reqSecDisplayCh chan string,
+) {
 	var totalDurForSecond [60]int64 // total durations for each clock second
 	var countForSecond [60]int64    // how many received per second
 	//var averagesArr [60]float64
