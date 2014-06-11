@@ -88,6 +88,9 @@ func realMain() int {
 	msgY, msgX := 1, 0
 	msgWin := createWindow(msgHeight, msgWidth, msgY, msgX)
 	msgWin.Keypad(true)
+	msgWin.Box(0, 0)
+	msgWin.NoutRefresh()
+
 
 	// Create the counter window, showing how many goroutines are active
 	ctrHeight, ctrWidth := 3, 7
@@ -96,6 +99,9 @@ func realMain() int {
 	stdscr.MovePrint(1, ctrX+1, "thrds")
 	stdscr.NoutRefresh()
 	workerCountWin := createWindow(ctrHeight, ctrWidth, ctrY, ctrX)
+	workerCountWin.Box(0, 0)
+	workerCountWin.NoutRefresh()
+
 
 	// Create the avg duration window, showing 5 second moving average
 	durHeight, durWidth := 3, 9
@@ -104,6 +110,9 @@ func realMain() int {
 	stdscr.MovePrint(1, durX+1, "av dur")
 	stdscr.NoutRefresh()
 	durWin := createWindow(durHeight, durWidth, durY, durX)
+	durWin.Box(0, 0)
+	durWin.NoutRefresh()
+
 
 	// Create the requests/sec window,
 	reqSecHeight, reqSecWidth := 3, 9
@@ -112,29 +121,15 @@ func realMain() int {
 	stdscr.MovePrint(1, reqSecX+1, "req/s")
 	stdscr.NoutRefresh()
 	reqSecWin := createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
+	reqSecWin.Box(0, 0)
+	reqSecWin.NoutRefresh()
+
 
 	// Create the bars window, showing the moving display of bars
 	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
 	barsY := msgHeight + 1
 	barsX := 1
 	barsWin := createWindow(barsHeight, barsWidth, barsY, barsX)
-
-	// Clear the section of screen where the box is currently located so
-	// that it is blanked by calling Erase on the window and refreshing it
-	// so that the changes are sent to the virtual screen but not actually
-	// output to the terminal
-	msgWin.Box(0, 0)
-	msgWin.NoutRefresh()
-
-	workerCountWin.Box(0, 0)
-	workerCountWin.NoutRefresh()
-
-	durWin.Box(0, 0)
-	durWin.NoutRefresh()
-
-	reqSecWin.Box(0, 0)
-	reqSecWin.NoutRefresh()
-
 	barsWin.Box(0, 0)
 	barsWin.NoutRefresh()
 
