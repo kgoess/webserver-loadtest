@@ -114,20 +114,35 @@ func realMain() int {
 
 	// Create the counter window, showing how many goroutines are active
 	ctrHeight, ctrWidth := 3, 7
-	ctrY := 1
+	ctrY := 2
 	ctrX := msgWidth + 1
+	stdscr.MovePrint(1, ctrX + 1, "thrds")
+	stdscr.NoutRefresh()
 	var workerCountWin *gc.Window
 	workerCountWin, err = gc.NewWindow(ctrHeight, ctrWidth, ctrY, ctrX)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create the avg duraion window, showing 5 second moving average
+	// Create the avg duration window, showing 5 second moving average
 	durHeight, durWidth := 3, 9
-	durY := 1
+	durY := 2
 	durX := ctrX + ctrWidth + 1
+	stdscr.MovePrint(1, durX + 1, "av dur")
+	stdscr.NoutRefresh()
 	var durWin *gc.Window
 	durWin, err = gc.NewWindow(durHeight, durWidth, durY, durX)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Create the requests/sec window, 
+	reqSecHeight, reqSecWidth := 3, 9
+	reqSecY := 2
+	reqSecX := durX + durWidth + 1
+	stdscr.MovePrint(1, reqSecX + 1, "req/s")
+	stdscr.NoutRefresh()
+	var reqSecWin *gc.Window
+	reqSecWin, err = gc.NewWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,25 +163,25 @@ func realMain() int {
 	// output to the terminal
 	//msgWin.ColorOn(whiteOnBlack)
 	msgWin.Erase()
-	msgWin.NoutRefresh()
 	msgWin.MoveWindow(msgY, msgX)
 	msgWin.Box(0, 0)
 	msgWin.NoutRefresh()
 
 	//workerCountWin.ColorOn(whiteOnBlack)
 	workerCountWin.Erase()
-	workerCountWin.NoutRefresh()
 	workerCountWin.Box(0, 0)
 	workerCountWin.NoutRefresh()
 
 	durWin.Erase()
-	durWin.NoutRefresh()
 	durWin.Box(0, 0)
 	durWin.NoutRefresh()
 
+	reqSecWin.Erase()
+	reqSecWin.Box(0, 0)
+	reqSecWin.NoutRefresh()
+
 	//barsWin.ColorOn(whiteOnBlack)
 	barsWin.Erase()
-	barsWin.NoutRefresh()
 	barsWin.Box(0, 0)
 	barsWin.NoutRefresh()
 
@@ -183,12 +198,14 @@ func realMain() int {
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
+	reqSecCh := make(chan int64)
+	reqSecDisplayCh := make(chan string)
 	barsToDrawCh := make(chan currentBars)
 
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
 	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
-	go durWinController(durationCh, durationDisplayCh)
+	go durWinController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
 
 	var exitStatus int
 
@@ -213,10 +230,12 @@ main:
 			}
 			gc.Update()
 		case msg := <-durationDisplayCh:
-			// that %7s should be determined from durWidth
+			// that %7s should really be determined from durWidth
 			durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
-			INFO.Println("got durationDisplayCh msg ", msg)
 			durWin.NoutRefresh()
+		case msg := <-reqSecDisplayCh:
+			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+			reqSecWin.NoutRefresh()
 		case msg := <-barsToDrawCh:
 			barsWin.Erase()
 			barsWin.Box(0, 0)
@@ -403,7 +422,7 @@ func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh
 	}
 }
 
-func durWinController(durationCh chan int64, durationDisplayCh chan string) {
+func durWinController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
 	var totalDurForSecond [60]int64 // total durations for each clock second
 	var countForSecond [60]int64    // how many received per second
 	//var averagesArr [60]float64
@@ -444,6 +463,12 @@ func durWinController(durationCh chan int64, durationDisplayCh chan string) {
 			} else {
 				durationDisplayCh <- "0"
 			}
+			countForSecIndex := currSec - 1
+			if countForSecIndex < 0 {
+				countForSecIndex = 59
+			}
+			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond[countForSecIndex])
+			//reqSecDisplayCh <- fmt.Sprintf("%d", currSec)
 			nextSec := time.Now().Second() + 1
 			if nextSec >= 60 {
 				nextSec = 0
