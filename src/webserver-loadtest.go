@@ -77,66 +77,7 @@ func realMain() int {
 	// initialize ncurses
 	stdscr, whiteOnBlack, greenOnBlack, redOnBlack := initializeNcurses()
 
-	// print startup message
-	stdscr.Print("Press 'q' to exit")
-	stdscr.NoutRefresh()
-
-	// Create message window
-	// and enable the use of the
-	// keypad on it so the arrow keys are available
-	msgHeight, msgWidth := 5, 40
-	msgY, msgX := 1, 0
-	msgWin := createWindow(msgHeight, msgWidth, msgY, msgX)
-	msgWin.Keypad(true)
-	msgWin.Box(0, 0)
-	msgWin.NoutRefresh()
-
-
-	// Create the counter window, showing how many goroutines are active
-	ctrHeight, ctrWidth := 3, 7
-	ctrY := 2
-	ctrX := msgWidth + 1
-	stdscr.MovePrint(1, ctrX+1, "thrds")
-	stdscr.NoutRefresh()
-	workerCountWin := createWindow(ctrHeight, ctrWidth, ctrY, ctrX)
-	workerCountWin.Box(0, 0)
-	workerCountWin.NoutRefresh()
-
-
-	// Create the avg duration window, showing 5 second moving average
-	durHeight, durWidth := 3, 9
-	durY := 2
-	durX := ctrX + ctrWidth + 1
-	stdscr.MovePrint(1, durX+1, "av dur")
-	stdscr.NoutRefresh()
-	durWin := createWindow(durHeight, durWidth, durY, durX)
-	durWin.Box(0, 0)
-	durWin.NoutRefresh()
-
-
-	// Create the requests/sec window,
-	reqSecHeight, reqSecWidth := 3, 9
-	reqSecY := 2
-	reqSecX := durX + durWidth + 1
-	stdscr.MovePrint(1, reqSecX+1, "req/s")
-	stdscr.NoutRefresh()
-	reqSecWin := createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
-	reqSecWin.Box(0, 0)
-	reqSecWin.NoutRefresh()
-
-
-	// Create the bars window, showing the moving display of bars
-	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
-	barsY := msgHeight + 1
-	barsX := 1
-	barsWin := createWindow(barsHeight, barsWidth, barsY, barsX)
-	barsWin.Box(0, 0)
-	barsWin.NoutRefresh()
-
-	// Update will flush only the characters which have changed between the
-	// physical screen and the virtual screen, minimizing the number of
-	// characters which must be sent
-	gc.Update()
+	msgWin, workerCountWin, durWin, reqSecWin, barsWin := drawDisplay(stdscr)
 
 	// create our various channels
 	infoMsgsCh := make(chan ncursesMsg)
@@ -189,6 +130,7 @@ main:
 			barsWin.Box(0, 0)
 			edibleCopy := make([]int, len(msg.cols))
 			copy(edibleCopy, msg.cols)
+			barsHeight, barsWidth := barsWin.MaxYX()
 			startI := len(edibleCopy) - barsWidth
 			if startI < 0 {
 				startI = 0
@@ -260,6 +202,72 @@ func initializeNcurses() (stdscr *gc.Window, whiteOnBlack int16, greenOnBlack in
 	gc.Cursor(0)
 
 	return 
+}
+
+func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Window, durWin *gc.Window, reqSecWin *gc.Window, barsWin *gc.Window){
+
+	// print startup message
+	stdscr.Print("Press 'q' to exit")
+	stdscr.NoutRefresh()
+
+	// Create message window
+	// and enable the use of the
+	// keypad on it so the arrow keys are available
+	msgHeight, msgWidth := 5, 40
+	msgY, msgX := 1, 0
+	msgWin = createWindow(msgHeight, msgWidth, msgY, msgX)
+	msgWin.Keypad(true)
+	msgWin.Box(0, 0)
+	msgWin.NoutRefresh()
+
+
+	// Create the counter window, showing how many goroutines are active
+	ctrHeight, ctrWidth := 3, 7
+	ctrY := 2
+	ctrX := msgWidth + 1
+	stdscr.MovePrint(1, ctrX+1, "thrds")
+	stdscr.NoutRefresh()
+	workerCountWin = createWindow(ctrHeight, ctrWidth, ctrY, ctrX)
+	workerCountWin.Box(0, 0)
+	workerCountWin.NoutRefresh()
+
+
+	// Create the avg duration window, showing 5 second moving average
+	durHeight, durWidth := 3, 9
+	durY := 2
+	durX := ctrX + ctrWidth + 1
+	stdscr.MovePrint(1, durX+1, "av dur")
+	stdscr.NoutRefresh()
+	durWin = createWindow(durHeight, durWidth, durY, durX)
+	durWin.Box(0, 0)
+	durWin.NoutRefresh()
+
+
+	// Create the requests/sec window,
+	reqSecHeight, reqSecWidth := 3, 9
+	reqSecY := 2
+	reqSecX := durX + durWidth + 1
+	stdscr.MovePrint(1, reqSecX+1, "req/s")
+	stdscr.NoutRefresh()
+	reqSecWin = createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
+	reqSecWin.Box(0, 0)
+	reqSecWin.NoutRefresh()
+
+
+	// Create the bars window, showing the moving display of bars
+	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
+	barsY := msgHeight + 1
+	barsX := 1
+	barsWin = createWindow(barsHeight, barsWidth, barsY, barsX)
+	barsWin.Box(0, 0)
+	barsWin.NoutRefresh()
+
+	// Update will flush only the characters which have changed between the
+	// physical screen and the virtual screen, minimizing the number of
+	// characters which must be sent
+	gc.Update()
+
+	return
 }
 
 func createWindow(height int, width int, y int, x int) (win *gc.Window) {
