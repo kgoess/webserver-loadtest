@@ -98,6 +98,7 @@ func realMain() int {
 	reqSecDisplayCh := make(chan string)
 	barsToDrawCh := make(chan currentBars)
 
+	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
 	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
@@ -135,7 +136,7 @@ main:
 	return exitStatus
 }
 
-func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined)  {
+func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
 
 	stdscr, err := gc.Init()
 	if err != nil {
@@ -156,16 +157,16 @@ func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined)  {
 	redOnBlack := int16(3)
 	gc.InitPair(redOnBlack, gc.C_RED, gc.C_BLACK)
 
-	// Set the cursor visibility. 
+	// Set the cursor visibility.
 	// Options are: 0 (invisible/hidden), 1 (normal) and 2 (extra-visible)
 	gc.Cursor(0)
 
-	colors = &colorsDefined{ whiteOnBlack, greenOnBlack, redOnBlack }
+	colors = &colorsDefined{whiteOnBlack, greenOnBlack, redOnBlack}
 
-	return 
+	return
 }
 
-func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Window, durWin *gc.Window, reqSecWin *gc.Window, barsWin *gc.Window){
+func drawDisplay(stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Window, durWin *gc.Window, reqSecWin *gc.Window, barsWin *gc.Window) {
 
 	// print startup message
 	stdscr.Print("Press 'q' to exit")
@@ -181,7 +182,6 @@ func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Wind
 	msgWin.Box(0, 0)
 	msgWin.NoutRefresh()
 
-
 	// Create the counter window, showing how many goroutines are active
 	ctrHeight, ctrWidth := 3, 7
 	ctrY := 2
@@ -191,7 +191,6 @@ func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Wind
 	workerCountWin = createWindow(ctrHeight, ctrWidth, ctrY, ctrX)
 	workerCountWin.Box(0, 0)
 	workerCountWin.NoutRefresh()
-
 
 	// Create the avg duration window, showing 5 second moving average
 	durHeight, durWidth := 3, 9
@@ -203,7 +202,6 @@ func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Wind
 	durWin.Box(0, 0)
 	durWin.NoutRefresh()
 
-
 	// Create the requests/sec window,
 	reqSecHeight, reqSecWidth := 3, 9
 	reqSecY := 2
@@ -213,7 +211,6 @@ func drawDisplay (stdscr *gc.Window) (msgWin *gc.Window, workerCountWin *gc.Wind
 	reqSecWin = createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
 	reqSecWin.Box(0, 0)
 	reqSecWin.NoutRefresh()
-
 
 	// Create the bars window, showing the moving display of bars
 	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
