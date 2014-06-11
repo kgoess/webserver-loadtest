@@ -38,6 +38,12 @@ type currentBars struct {
 	failCols []int
 }
 
+type colorsDefined struct {
+	whiteOnBlack int16
+	greenOnBlack int16
+	redOnBlack   int16
+}
+
 var testUrl = flag.String("url", "", "the url you want to beat on")
 var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
 var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
@@ -75,8 +81,9 @@ func main() {
 func realMain() int {
 
 	// initialize ncurses
-	stdscr, whiteOnBlack, greenOnBlack, redOnBlack := initializeNcurses()
+	stdscr, colors := initializeNcurses()
 
+	// draw the stuff on the screen
 	msgWin, workerCountWin, durWin, reqSecWin, barsWin := drawDisplay(stdscr)
 
 	// create our various channels
@@ -102,22 +109,7 @@ main:
 	for {
 		select {
 		case msg := <-infoMsgsCh:
-			var row int
-			if msg.msgType == MSG_TYPE_RESULT {
-				row = 1
-			} else if msg.msgType == MSG_TYPE_INFO {
-				row = 2
-			} else {
-				row = 3
-			}
-			msgWin.MovePrint(row, 1, fmt.Sprintf("%-40s", msg.msgStr))
-			msgWin.Box(0, 0)
-			msgWin.NoutRefresh()
-			if msg.currentCount >= 0 {
-				workerCountWin.MovePrint(1, 1, fmt.Sprintf("%5d", msg.currentCount))
-				workerCountWin.NoutRefresh()
-			}
-			gc.Update()
+			updateMsgWin(msg, msgWin, workerCountWin)
 		case msg := <-durationDisplayCh:
 			// that %7s should really be determined from durWidth
 			durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
@@ -126,48 +118,15 @@ main:
 			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
 			reqSecWin.NoutRefresh()
 		case msg := <-barsToDrawCh:
-			barsWin.Erase()
-			barsWin.Box(0, 0)
-			edibleCopy := make([]int, len(msg.cols))
-			copy(edibleCopy, msg.cols)
-			barsHeight, barsWidth := barsWin.MaxYX()
-			startI := len(edibleCopy) - barsWidth
-			if startI < 0 {
-				startI = 0
-			}
-			currentSec := time.Now().Second()
-			for row := 0; row < barsHeight-2; row++ {
-				for col := range edibleCopy[startI:len(edibleCopy)] {
-					if edibleCopy[col] > 0 {
-						turnOffColor := int16(0)
-						currChar := "="
-						if msg.failCols[col] > row {
-							barsWin.ColorOff(whiteOnBlack)
-							barsWin.ColorOn(redOnBlack)
-							currChar = "x"
-							turnOffColor = redOnBlack
-
-						} else if col == currentSec {
-							barsWin.ColorOff(whiteOnBlack)
-							barsWin.ColorOn(greenOnBlack)
-							turnOffColor = greenOnBlack
-						}
-						barsWin.MovePrint(barsHeight-2-row, col+1, currChar)
-						if turnOffColor != 0 {
-							barsWin.ColorOff(turnOffColor)
-							barsWin.ColorOn(whiteOnBlack)
-						}
-						edibleCopy[col]--
-					}
-				}
-			}
-			barsWin.NoutRefresh()
+			updateBarsWin(msg, barsWin, *colors)
 			gc.Update()
 		case exitStatus = <-exitCh:
 			break main
 		case durationMs := <-durationCh:
 			INFO.Println("got a duration thing ", durationMs)
 		}
+
+		gc.Update()
 	}
 
 	msgWin.Delete()
@@ -176,7 +135,7 @@ main:
 	return exitStatus
 }
 
-func initializeNcurses() (stdscr *gc.Window, whiteOnBlack int16, greenOnBlack int16, redOnBlack int16)  {
+func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined)  {
 
 	stdscr, err := gc.Init()
 	if err != nil {
@@ -190,16 +149,18 @@ func initializeNcurses() (stdscr *gc.Window, whiteOnBlack int16, greenOnBlack in
 	gc.StartColor()
 
 	// initialize colors
-	whiteOnBlack = int16(1)
+	whiteOnBlack := int16(1)
 	gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
-	greenOnBlack = int16(2)
+	greenOnBlack := int16(2)
 	gc.InitPair(greenOnBlack, gc.C_GREEN, gc.C_BLACK)
-	redOnBlack = int16(3)
+	redOnBlack := int16(3)
 	gc.InitPair(redOnBlack, gc.C_RED, gc.C_BLACK)
 
 	// Set the cursor visibility. 
 	// Options are: 0 (invisible/hidden), 1 (normal) and 2 (extra-visible)
 	gc.Cursor(0)
+
+	colors = &colorsDefined{ whiteOnBlack, greenOnBlack, redOnBlack }
 
 	return 
 }
@@ -276,6 +237,66 @@ func createWindow(height int, width int, y int, x int) (win *gc.Window) {
 		log.Fatal(err)
 	}
 	return
+}
+
+func updateMsgWin(msg ncursesMsg, msgWin *gc.Window, workerCountWin *gc.Window) {
+	var row int
+	if msg.msgType == MSG_TYPE_RESULT {
+		row = 1
+	} else if msg.msgType == MSG_TYPE_INFO {
+		row = 2
+	} else {
+		row = 3
+	}
+	msgWin.MovePrint(row, 1, fmt.Sprintf("%-40s", msg.msgStr))
+	msgWin.Box(0, 0)
+	msgWin.NoutRefresh()
+	if msg.currentCount >= 0 {
+		workerCountWin.MovePrint(1, 1, fmt.Sprintf("%5d", msg.currentCount))
+		workerCountWin.NoutRefresh()
+	}
+}
+func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
+
+	whiteOnBlack := colors.whiteOnBlack
+	redOnBlack := colors.redOnBlack
+	greenOnBlack := colors.greenOnBlack
+	barsWin.Erase()
+	barsWin.Box(0, 0)
+	edibleCopy := make([]int, len(msg.cols))
+	copy(edibleCopy, msg.cols)
+	barsHeight, barsWidth := barsWin.MaxYX()
+	startI := len(edibleCopy) - barsWidth
+	if startI < 0 {
+		startI = 0
+	}
+	currentSec := time.Now().Second()
+	for row := 0; row < barsHeight-2; row++ {
+		for col := range edibleCopy[startI:len(edibleCopy)] {
+			if edibleCopy[col] > 0 {
+				turnOffColor := int16(0)
+				currChar := "="
+				if msg.failCols[col] > row {
+					barsWin.ColorOff(whiteOnBlack)
+					barsWin.ColorOn(redOnBlack)
+					currChar = "x"
+					turnOffColor = redOnBlack
+
+				} else if col == currentSec {
+					barsWin.ColorOff(whiteOnBlack)
+					barsWin.ColorOn(greenOnBlack)
+					turnOffColor = greenOnBlack
+				}
+				barsWin.MovePrint(barsHeight-2-row, col+1, currChar)
+				if turnOffColor != 0 {
+					barsWin.ColorOff(turnOffColor)
+					barsWin.ColorOn(whiteOnBlack)
+				}
+				edibleCopy[col]--
+			}
+		}
+	}
+	barsWin.NoutRefresh()
 }
 
 func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window) {
