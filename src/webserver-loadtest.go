@@ -48,8 +48,6 @@ var testUrl = flag.String("url", "", "the url you want to beat on")
 var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
 var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
 
-// See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
-// So that defer will run propoerly
 // Remember Exit(0) is success, Exit(1) is failure
 func main() {
 	flag.Parse()
@@ -78,6 +76,8 @@ func main() {
 	os.Exit(realMain())
 }
 
+// Why realMain? See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
+// So that defer will run propoerly
 func realMain() int {
 
 	// initialize ncurses
