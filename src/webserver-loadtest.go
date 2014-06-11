@@ -123,8 +123,6 @@ main:
 			gc.Update()
 		case exitStatus = <-exitCh:
 			break main
-		case durationMs := <-durationCh:
-			INFO.Println("got a duration thing ", durationMs)
 		}
 
 		gc.Update()
