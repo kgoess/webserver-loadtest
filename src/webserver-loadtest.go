@@ -75,41 +75,18 @@ func main() {
 func realMain() int {
 
 	// initialize ncurses
-	stdscr, err := gc.Init()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer gc.End()
-
-	// Turn off character echo, hide the cursor and disable input buffering
-	gc.Echo(false)
-	gc.CBreak(true)
-	gc.StartColor()
-
-	// initialize colors
-	whiteOnBlack := int16(1)
-	gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
-	greenOnBlack := int16(2)
-	gc.InitPair(greenOnBlack, gc.C_GREEN, gc.C_BLACK)
-	redOnBlack := int16(3)
-	gc.InitPair(redOnBlack, gc.C_RED, gc.C_BLACK)
+	stdscr, whiteOnBlack, greenOnBlack, redOnBlack := initializeNcurses()
 
 	// print startup message
-	gc.Cursor(0)
 	stdscr.Print("Press 'q' to exit")
 	stdscr.NoutRefresh()
-
-	msgHeight, msgWidth := 5, 40
-	msgY, msgX := 1, 0
 
 	// Create message window
 	// and enable the use of the
 	// keypad on it so the arrow keys are available
-	var msgWin *gc.Window
-	msgWin, err = gc.NewWindow(msgHeight, msgWidth, msgY, msgX)
-	if err != nil {
-		log.Fatal(err)
-	}
+	msgHeight, msgWidth := 5, 40
+	msgY, msgX := 1, 0
+	msgWin := createWindow(msgHeight, msgWidth, msgY, msgX)
 	msgWin.Keypad(true)
 
 	// Create the counter window, showing how many goroutines are active
@@ -118,11 +95,7 @@ func realMain() int {
 	ctrX := msgWidth + 1
 	stdscr.MovePrint(1, ctrX+1, "thrds")
 	stdscr.NoutRefresh()
-	var workerCountWin *gc.Window
-	workerCountWin, err = gc.NewWindow(ctrHeight, ctrWidth, ctrY, ctrX)
-	if err != nil {
-		log.Fatal(err)
-	}
+	workerCountWin := createWindow(ctrHeight, ctrWidth, ctrY, ctrX)
 
 	// Create the avg duration window, showing 5 second moving average
 	durHeight, durWidth := 3, 9
@@ -130,32 +103,21 @@ func realMain() int {
 	durX := ctrX + ctrWidth + 1
 	stdscr.MovePrint(1, durX+1, "av dur")
 	stdscr.NoutRefresh()
-	var statsWin *gc.Window
-	statsWin, err = gc.NewWindow(durHeight, durWidth, durY, durX)
-	if err != nil {
-		log.Fatal(err)
-	}
+	durWin := createWindow(durHeight, durWidth, durY, durX)
+
 	// Create the requests/sec window,
 	reqSecHeight, reqSecWidth := 3, 9
 	reqSecY := 2
 	reqSecX := durX + durWidth + 1
 	stdscr.MovePrint(1, reqSecX+1, "req/s")
 	stdscr.NoutRefresh()
-	var reqSecWin *gc.Window
-	reqSecWin, err = gc.NewWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
-	if err != nil {
-		log.Fatal(err)
-	}
+	reqSecWin := createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
 
 	// Create the bars window, showing the moving display of bars
 	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
 	barsY := msgHeight + 1
 	barsX := 1
-	var barsWin *gc.Window
-	barsWin, err = gc.NewWindow(barsHeight, barsWidth, barsY, barsX)
-	if err != nil {
-		log.Fatal(err)
-	}
+	barsWin := createWindow(barsHeight, barsWidth, barsY, barsX)
 
 	// Clear the section of screen where the box is currently located so
 	// that it is blanked by calling Erase on the window and refreshing it
@@ -172,9 +134,9 @@ func realMain() int {
 	workerCountWin.Box(0, 0)
 	workerCountWin.NoutRefresh()
 
-	statsWin.Erase()
-	statsWin.Box(0, 0)
-	statsWin.NoutRefresh()
+	durWin.Erase()
+	durWin.Box(0, 0)
+	durWin.NoutRefresh()
 
 	reqSecWin.Erase()
 	reqSecWin.Box(0, 0)
@@ -205,7 +167,7 @@ func realMain() int {
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
 	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
-	go statsWinController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
+	go statsWinsController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
 
 	var exitStatus int
 
@@ -231,8 +193,8 @@ main:
 			gc.Update()
 		case msg := <-durationDisplayCh:
 			// that %7s should really be determined from durWidth
-			statsWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
-			statsWin.NoutRefresh()
+			durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+			durWin.NoutRefresh()
 		case msg := <-reqSecDisplayCh:
 			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
 			reqSecWin.NoutRefresh()
@@ -284,6 +246,42 @@ main:
 	gc.End()
 	INFO.Println("exiting with status ", exitStatus)
 	return exitStatus
+}
+
+func initializeNcurses() (stdscr *gc.Window, whiteOnBlack int16, greenOnBlack int16, redOnBlack int16)  {
+
+	stdscr, err := gc.Init()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gc.End()
+
+	// Turn off character echo, hide the cursor and disable input buffering
+	gc.Echo(false)
+	gc.CBreak(true)
+	gc.StartColor()
+
+	// initialize colors
+	whiteOnBlack = int16(1)
+	gc.InitPair(whiteOnBlack, gc.C_WHITE, gc.C_BLACK)
+	greenOnBlack = int16(2)
+	gc.InitPair(greenOnBlack, gc.C_GREEN, gc.C_BLACK)
+	redOnBlack = int16(3)
+	gc.InitPair(redOnBlack, gc.C_RED, gc.C_BLACK)
+
+	// Set the cursor visibility. 
+	// Options are: 0 (invisible/hidden), 1 (normal) and 2 (extra-visible)
+	gc.Cursor(0)
+
+	return 
+}
+
+func createWindow(height int, width int, y int, x int) (win *gc.Window) {
+	win, err := gc.NewWindow(height, width, y, x)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return
 }
 
 func windowRunloop(infoMsgsCh chan ncursesMsg, exitCh chan int, changeNumRequestersCh chan int, win *gc.Window) {
@@ -422,7 +420,7 @@ func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh
 	}
 }
 
-func statsWinController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
+func statsWinsController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
 	var totalDurForSecond [60]int64 // total durations for each clock second
 	var countForSecond [60]int64    // how many received per second
 	//var averagesArr [60]float64
