@@ -106,6 +106,9 @@ func realMain() int {
 
 	var exitStatus int
 
+	// This is the main loop controlling the ncurses display. Since ncurses
+	// wasn't designed with concurrency in mind, only one goroutine should
+	// write to a window, so I'm putting all the window writing in here.
 main:
 	for {
 		select {
