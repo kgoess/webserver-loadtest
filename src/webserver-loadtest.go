@@ -120,7 +120,6 @@ main:
 			reqSecWin.NoutRefresh()
 		case msg := <-barsToDrawCh:
 			updateBarsWin(msg, barsWin, *colors)
-			gc.Update()
 		case exitStatus = <-exitCh:
 			break main
 		}
