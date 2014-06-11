@@ -123,27 +123,18 @@ func realMain() int {
 	// that it is blanked by calling Erase on the window and refreshing it
 	// so that the changes are sent to the virtual screen but not actually
 	// output to the terminal
-	//msgWin.ColorOn(whiteOnBlack)
-	msgWin.Erase()
-	msgWin.MoveWindow(msgY, msgX)
 	msgWin.Box(0, 0)
 	msgWin.NoutRefresh()
 
-	//workerCountWin.ColorOn(whiteOnBlack)
-	workerCountWin.Erase()
 	workerCountWin.Box(0, 0)
 	workerCountWin.NoutRefresh()
 
-	durWin.Erase()
 	durWin.Box(0, 0)
 	durWin.NoutRefresh()
 
-	reqSecWin.Erase()
 	reqSecWin.Box(0, 0)
 	reqSecWin.NoutRefresh()
 
-	//barsWin.ColorOn(whiteOnBlack)
-	barsWin.Erase()
 	barsWin.Box(0, 0)
 	barsWin.NoutRefresh()
 
