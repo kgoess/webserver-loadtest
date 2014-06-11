@@ -130,8 +130,8 @@ func realMain() int {
 	durX := ctrX + ctrWidth + 1
 	stdscr.MovePrint(1, durX + 1, "av dur")
 	stdscr.NoutRefresh()
-	var durWin *gc.Window
-	durWin, err = gc.NewWindow(durHeight, durWidth, durY, durX)
+	var statsWin *gc.Window
+	statsWin, err = gc.NewWindow(durHeight, durWidth, durY, durX)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -172,9 +172,9 @@ func realMain() int {
 	workerCountWin.Box(0, 0)
 	workerCountWin.NoutRefresh()
 
-	durWin.Erase()
-	durWin.Box(0, 0)
-	durWin.NoutRefresh()
+	statsWin.Erase()
+	statsWin.Box(0, 0)
+	statsWin.NoutRefresh()
 
 	reqSecWin.Erase()
 	reqSecWin.Box(0, 0)
@@ -205,7 +205,7 @@ func realMain() int {
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
 	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
-	go durWinController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
+	go statsWinController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
 
 	var exitStatus int
 
@@ -231,8 +231,8 @@ main:
 			gc.Update()
 		case msg := <-durationDisplayCh:
 			// that %7s should really be determined from durWidth
-			durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
-			durWin.NoutRefresh()
+			statsWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+			statsWin.NoutRefresh()
 		case msg := <-reqSecDisplayCh:
 			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
 			reqSecWin.NoutRefresh()
@@ -422,7 +422,7 @@ func barsController(reqMadeOnSecCh chan int, failsOnSecCh chan int, barsToDrawCh
 	}
 }
 
-func durWinController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
+func statsWinController(durationCh chan int64, durationDisplayCh chan string, reqSecCh chan int64, reqSecDisplayCh chan string) {
 	var totalDurForSecond [60]int64 // total durations for each clock second
 	var countForSecond [60]int64    // how many received per second
 	//var averagesArr [60]float64
