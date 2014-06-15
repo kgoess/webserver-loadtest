@@ -2,6 +2,6 @@
 .pkg-installed
 loadtest.log
 pkg/
-webserver-loadtest
+^webserver-loadtest
 bin
 src/code.google.com
