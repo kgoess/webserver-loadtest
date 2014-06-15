@@ -2,23 +2,25 @@
 # This is just a quick makefile to get me going. It may not be suitable
 # for your needs.
 
-TARGET=webserver-loadtest
-SRC=$(TARGET).go
+TARGET=bin/webserver-loadtest
+SRCDIR=src/github.com/kgoess
+
 RANDOM_FAILS=0
 
 default: run
 
 run: build
 ifndef TESTURL
-    $(error TESTURL is undefined)
+	$(error TESTURL is undefined)
 endif
 	cat /dev/null > loadtest.log
 	./$(TARGET) --url $(TESTURL) --random-fails $(RANDOM_FAILS)
 
-build: .pkg-installed $(SRC)
+build: .pkg-installed $(TARGET)
 
-$(SRC): $(TARGET)
-	go build src/$(SRC)
+$(TARGET): $(SRCDIR)/webserver-loadtest.go .pkg-installed
+	go build -o $(TARGET) $(SRCDIR)/webserver-loadtest.go
+
 
 # see README.md for details about this PKG_CONFIG_PATH
 .pkg-installed:
