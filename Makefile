@@ -18,7 +18,7 @@ endif
 
 build: .pkg-installed $(TARGET)
 
-$(TARGET): $(SRCDIR)/webserver-loadtest.go .pkg-installed
+$(TARGET): .pkg-installed $(SRCDIR)/webserver-loadtest.go 
 	go build -o $(TARGET) $(SRCDIR)/webserver-loadtest.go
 
 
