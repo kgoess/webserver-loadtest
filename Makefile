@@ -27,3 +27,10 @@ $(TARGET): .pkg-installed $(SRCDIR)/webserver-loadtest.go
 	PKG_CONFIG_PATH=~/local-pkg-config/ go get -v code.google.com/p/goncurses
 	touch .pkg-installed
 
+
+test: 
+	go test github.com/kgoess/webserver-loadtest/ringbuffer
+
+help:
+	@echo "e.g. make TESTURL=http://..."
+	@echo "     also RANDOM_FAILS=3 (30% fails)"
