@@ -26,4 +26,4 @@ $(TARGET): .pkg-installed $(SRCDIR)/webserver-loadtest.go
 .pkg-installed:
 	PKG_CONFIG_PATH=~/local-pkg-config/ go get -v code.google.com/p/goncurses
 	touch .pkg-installed
-	
+

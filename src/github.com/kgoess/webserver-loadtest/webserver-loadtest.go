@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"math/rand"
+
+	rb "github.com/kgoess/webserver-loadtest/ringbuffer"
 )
 
 var (
@@ -482,8 +484,8 @@ func statsWinsController(
 	reqSecCh chan int64,
 	reqSecDisplayCh chan string,
 ) {
-	var totalDurForSecond [60]int64 // total durations for each clock second
-	var countForSecond [60]int64    // how many received per second
+	var totalDurForSecond [60]int64   // total durations for each clock second
+	countForSecond := rb.Ringbuffer{} // how many received per second
 	//var averagesArr [60]float64
 	window := 3
 	//var averages []float64 = averagesArr[0:window]
@@ -501,7 +503,7 @@ func statsWinsController(
 		case dur := <-durationCh:
 			currSec := time.Now().Second()
 			totalDurForSecond[currSec] += dur
-			countForSecond[currSec]++
+			countForSecond.IncrementAt(currSec)
 		//case <-time.After(1 * time.Second):
 		case <-timeToRedraw:
 			currSec := time.Now().Second()
@@ -514,7 +516,7 @@ func statsWinsController(
 					index += 60
 				}
 				windowDur += totalDurForSecond[index]
-				windowCount += countForSecond[index]
+				windowCount += countForSecond.GetValAt(index)
 			}
 			if windowCount > 0 {
 				INFO.Println("windowDur is ", windowDur, " and windowCount is ", windowCount, " so avg is ", float64(windowDur)/float64(windowCount))
@@ -522,18 +524,18 @@ func statsWinsController(
 			} else {
 				durationDisplayCh <- "0"
 			}
-			countForSecIndex := currSec - 1
-			if countForSecIndex < 0 {
-				countForSecIndex = 59
-			}
-			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond[countForSecIndex])
+			//			countForSecIndex := currSec - 1
+			//			if countForSecIndex < 0 {
+			//				countForSecIndex = 59
+			//			}
+			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond.GetPrevVal())
 			//reqSecDisplayCh <- fmt.Sprintf("%d", currSec)
 			nextSec := time.Now().Second() + 1
 			if nextSec >= 60 {
 				nextSec = 0
 			}
 			totalDurForSecond[nextSec] = 0
-			countForSecond[nextSec] = 0
+			countForSecond.ResetNextVal()
 		}
 	}
 }
