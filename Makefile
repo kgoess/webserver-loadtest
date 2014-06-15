@@ -3,7 +3,7 @@
 # for your needs.
 
 TARGET=bin/webserver-loadtest
-SRCDIR=src/github.com/kgoess
+SRCDIR=src/github.com/kgoess/webserver-loadtest
 
 RANDOM_FAILS=0
 
