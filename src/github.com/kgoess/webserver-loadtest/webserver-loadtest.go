@@ -484,8 +484,8 @@ func statsWinsController(
 	reqSecCh chan int64,
 	reqSecDisplayCh chan string,
 ) {
-	var totalDurForSecond [60]int64    // total durations for each clock second
-	countForSecond := rb.MakeNew(INFO) // how many received per second
+	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
+	countForSecond := rb.MakeNew(INFO)    // how many received per second
 	lookbackSecs := 3
 
 	timeToRedraw := make(chan bool)
@@ -499,9 +499,8 @@ func statsWinsController(
 	for {
 		select {
 		case dur := <-durationCh:
-			currSec := time.Now().Second()
-			totalDurForSecond[currSec] += dur
-			countForSecond.IncrementAt(currSec)
+			totalDurForSecond.ChangeHeadBy(dur)
+			countForSecond.IncrementHead()
 		case <-timeToRedraw:
 			currSec := time.Now().Second()
 
@@ -512,7 +511,7 @@ func statsWinsController(
 				if index < 0 {
 					index += 60
 				}
-				windowDur += totalDurForSecond[index]
+				windowDur += totalDurForSecond.GetValAt(index)
 				windowCount += countForSecond.GetValAt(index)
 			}
 			if windowCount > 0 {
@@ -527,7 +526,6 @@ func statsWinsController(
 			if nextSec >= 60 {
 				nextSec = 0
 			}
-			totalDurForSecond[nextSec] = 0
 		}
 	}
 }
