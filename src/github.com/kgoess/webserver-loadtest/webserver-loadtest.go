@@ -516,7 +516,6 @@ func statsWinsController(
 				windowCount += countForSecond.GetValAt(index)
 			}
 			if windowCount > 0 {
-				INFO.Println("windowDur is ", windowDur, " and windowCount is ", windowCount, " so avg is ", float64(windowDur)/float64(windowCount))
 				durationDisplayCh <- fmt.Sprintf("%4.2f", float64(windowDur)/float64(windowCount))
 			} else {
 				durationDisplayCh <- "0"
