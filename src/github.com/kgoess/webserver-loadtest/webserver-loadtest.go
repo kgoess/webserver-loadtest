@@ -484,7 +484,7 @@ func statsWinsController(
 	reqSecCh chan int64,
 	reqSecDisplayCh chan string,
 ) {
-	var totalDurForSecond [60]int64   // total durations for each clock second
+	var totalDurForSecond [60]int64    // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO) // how many received per second
 	lookbackSecs := 3
 
@@ -516,7 +516,8 @@ func statsWinsController(
 				windowCount += countForSecond.GetValAt(index)
 			}
 			if windowCount > 0 {
-				durationDisplayCh <- fmt.Sprintf("%4.2f", float64(windowDur)/float64(windowCount))
+				avgDur := float64(windowDur) / float64(windowCount)
+				durationDisplayCh <- fmt.Sprintf("%4.2f", avgDur)
 			} else {
 				durationDisplayCh <- "0"
 			}
