@@ -36,8 +36,8 @@ type ncursesMsg struct {
 }
 
 type currentBars struct {
-	cols     []int
-	failCols []int
+	cols     []int64
+	failCols []int64
 }
 
 type colorsDefined struct {
@@ -270,7 +270,7 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 	greenOnBlack := colors.greenOnBlack
 	barsWin.Erase()
 	barsWin.Box(0, 0)
-	edibleCopy := make([]int, len(msg.cols))
+	edibleCopy := make([]int64, len(msg.cols))
 	copy(edibleCopy, msg.cols)
 	barsHeight, barsWidth := barsWin.MaxYX()
 	startI := len(edibleCopy) - barsWidth
@@ -283,7 +283,8 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 			if edibleCopy[col] > 0 {
 				turnOffColor := int16(0)
 				currChar := "="
-				if msg.failCols[col] > row {
+				// row is an int--32-bit, right?
+				if int(msg.failCols[col]) > row {
 					barsWin.ColorOff(whiteOnBlack)
 					barsWin.ColorOn(redOnBlack)
 					currChar = "x"
@@ -445,12 +446,9 @@ func barsController(
 	failsOnSecCh chan int,
 	barsToDrawCh chan currentBars,
 ) {
-	var secondsToStore = 60
-	var requestsForSecond [60]int // one column for each clock second
-	var failsForSecond [60]int    // one column for each clock second
-	for i := range requestsForSecond {
-		requestsForSecond[i] = 0
-	}
+	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
+	failsForSecond := rb.MakeNew(INFO) // one column for each clock second
+
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
 		for {
@@ -462,18 +460,13 @@ func barsController(
 	for {
 		select {
 		case msg := <-reqMadeOnSecCh:
-			requestsForSecond[msg]++
+			requestsForSecond.IncrementAt(msg)
 		case msg := <-failsOnSecCh:
-			failsForSecond[msg]++
+			failsForSecond.IncrementAt(msg)
 		case <-timeToRedraw:
-			// zero out the *next* second, aka 60 seconds *ago* ;-)1
-			nextSec := time.Now().Second() + 1
-			if nextSec >= secondsToStore {
-				nextSec = 0
+			barsToDrawCh <- currentBars{
+				requestsForSecond.GetArray(), failsForSecond.GetArray(),
 			}
-			requestsForSecond[nextSec] = 0
-			failsForSecond[nextSec] = 0
-			barsToDrawCh <- currentBars{requestsForSecond[:], failsForSecond[:]}
 		}
 	}
 }

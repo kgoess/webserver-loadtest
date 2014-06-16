@@ -61,6 +61,7 @@ func (rb *Ringbuffer) ChangeHeadBy(val int64) int64 {
 }
 
 func (rb *Ringbuffer) IncrementAt(i int) {
+	// this will panic on index out-of-bounds, that's good
 	rb.array[i] ++
 }
 
@@ -95,5 +96,9 @@ func (rb *Ringbuffer) ResetNextVal() {
 
 func (rb *Ringbuffer) Length() int {
 	return len(rb.array)
+}
+
+func (rb *Ringbuffer) GetArray() []int64 {
+	return rb.array[:]  // right?
 }
 
