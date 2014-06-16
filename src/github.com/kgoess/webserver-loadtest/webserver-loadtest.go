@@ -522,10 +522,6 @@ func statsWinsController(
 			}
 
 			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond.GetPrevVal())
-			nextSec := time.Now().Second() + 1
-			if nextSec >= 60 {
-				nextSec = 0
-			}
 		}
 	}
 }
