@@ -485,7 +485,7 @@ func statsWinsController(
 	reqSecDisplayCh chan string,
 ) {
 	var totalDurForSecond [60]int64   // total durations for each clock second
-	countForSecond := rb.Ringbuffer{} // how many received per second
+	countForSecond := rb.MakeNew(INFO) // how many received per second
 	//var averagesArr [60]float64
 	window := 3
 	//var averages []float64 = averagesArr[0:window]
@@ -528,6 +528,7 @@ func statsWinsController(
 			//			if countForSecIndex < 0 {
 			//				countForSecIndex = 59
 			//			}
+
 			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond.GetPrevVal())
 			//reqSecDisplayCh <- fmt.Sprintf("%d", currSec)
 			nextSec := time.Now().Second() + 1
@@ -535,7 +536,6 @@ func statsWinsController(
 				nextSec = 0
 			}
 			totalDurForSecond[nextSec] = 0
-			countForSecond.ResetNextVal()
 		}
 	}
 }

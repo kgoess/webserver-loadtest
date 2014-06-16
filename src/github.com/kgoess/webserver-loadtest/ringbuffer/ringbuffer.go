@@ -1,8 +1,36 @@
 package ringbuffer
 
+import "time"
+import "log"
+
+// debugging kludge--is this really the way to share global loggers?
+var (
+	INFO    *log.Logger
+)
+
 type Ringbuffer struct {
 	array [60]int64
 	head  int
+}
+
+func MakeNew(infolog *log.Logger) *Ringbuffer {
+	rb := new(Ringbuffer)
+	INFO = infolog
+	go rb.advanceWithTimer()
+	return rb
+}
+
+func (rb *Ringbuffer) advanceWithTimer(){
+	ticker := time.Tick(1 * time.Second)
+	for now := range ticker {
+		currentSecond := now.Second();
+		if currentSecond > 59 {
+			currentSecond = 0
+		}
+		rb.head = currentSecond
+	}
+	// is this a race condition? need a lock here?
+	rb.ResetNextVal()
 }
 
 func (rb *Ringbuffer) GetVal() int64 {
