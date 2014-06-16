@@ -459,10 +459,10 @@ func barsController(
 
 	for {
 		select {
-		case msg := <-reqMadeOnSecCh:
-			requestsForSecond.IncrementAt(msg)
-		case msg := <-failsOnSecCh:
-			failsForSecond.IncrementAt(msg)
+		case second := <-reqMadeOnSecCh:
+			requestsForSecond.IncrementAt(second)
+		case second := <-failsOnSecCh:
+			failsForSecond.IncrementAt(second)
 		case <-timeToRedraw:
 			barsToDrawCh <- currentBars{
 				requestsForSecond.GetArray(), failsForSecond.GetArray(),
