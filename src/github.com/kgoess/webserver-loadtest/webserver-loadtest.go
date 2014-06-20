@@ -223,7 +223,9 @@ func drawDisplay(
 	reqSecWin.NoutRefresh()
 
 	// Create the bars window, showing the moving display of bars
-	barsHeight, barsWidth := 25, 80 // need to size this dynamically, TBD
+	secondsPerMinute := 60
+	barsWidth := secondsPerMinute + 3 // we wrap after a minute
+	barsHeight := 25                  // need to size this dynamically, TBD
 	barsY := msgHeight + 1
 	barsX := 1
 	barsWin = createWindow(barsHeight, barsWidth, barsY, barsX)
