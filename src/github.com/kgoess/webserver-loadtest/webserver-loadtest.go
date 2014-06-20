@@ -290,7 +290,10 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 					currChar = "x"
 					turnOffColor = redOnBlack
 
-				} else if col == currentSec {
+				} else if col == currentSec ||
+					col == currentSec-1 {
+					// current second is in progress, so make the previous second green too
+					// not precisely correct, but close enough here
 					barsWin.ColorOff(whiteOnBlack)
 					barsWin.ColorOn(greenOnBlack)
 					turnOffColor = greenOnBlack
