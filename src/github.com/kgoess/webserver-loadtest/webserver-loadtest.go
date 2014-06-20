@@ -447,7 +447,7 @@ func barsController(
 	barsToDrawCh chan currentBars,
 ) {
 	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
-	failsForSecond := rb.MakeNew(INFO) // one column for each clock second
+	failsForSecond := rb.MakeNew(INFO)    // one column for each clock second
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
