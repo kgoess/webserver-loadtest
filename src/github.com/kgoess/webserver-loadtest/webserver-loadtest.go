@@ -502,7 +502,7 @@ func requester(
 			}
 
 			// just for development
-			time.Sleep(10 * time.Millisecond)
+			//time.Sleep(10 * time.Millisecond)
 		}
 		if shutdownNow {
 			return
