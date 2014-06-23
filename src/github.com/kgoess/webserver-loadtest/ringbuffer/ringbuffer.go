@@ -102,3 +102,14 @@ func (rb *Ringbuffer) GetArray() []int64 {
 	return rb.array[:]  // right?
 }
 
+func (rb *Ringbuffer) GetMax() int64 {
+    var max = int64(0)
+	for i := range rb.array {
+        if rb.array[i] > max {
+            max = rb.array[i]
+        }
+    }
+    return max
+}
+
+

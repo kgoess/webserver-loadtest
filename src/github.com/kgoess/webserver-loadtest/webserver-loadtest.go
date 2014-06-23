@@ -38,6 +38,7 @@ type ncursesMsg struct {
 type currentBars struct {
 	cols     []int64
 	failCols []int64
+	max      int64
 }
 
 type colorsDefined struct {
@@ -86,7 +87,7 @@ func realMain() int {
 	stdscr, colors := initializeNcurses()
 
 	// draw the stuff on the screen
-	msgWin, workerCountWin, durWin, reqSecWin, barsWin := drawDisplay(stdscr)
+	msgWin, workerCountWin, durWin, reqSecWin, barsWin, scaleWin, maxWin := drawDisplay(stdscr)
 
 	// create our various channels
 	infoMsgsCh := make(chan ncursesMsg)
@@ -107,6 +108,7 @@ func realMain() int {
 	go statsWinsController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
 
 	var exitStatus int
+	currentScale := int64(1)
 
 	// This is the main loop controlling the ncurses display. Since ncurses
 	// wasn't designed with concurrency in mind, only one goroutine should
@@ -124,7 +126,13 @@ main:
 			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
 			reqSecWin.NoutRefresh()
 		case msg := <-barsToDrawCh:
-			updateBarsWin(msg, barsWin, *colors)
+			currentScale = calculateScale(msg.max)
+			// 25 is the number of rows in the window, s/b dynamic or defined elsewhere
+			maxWin.MovePrint(1, 1, fmt.Sprintf("%5d", msg.max))
+			maxWin.NoutRefresh()
+			scaleWin.MovePrint(1, 1, fmt.Sprintf("%5d", currentScale))
+			scaleWin.NoutRefresh()
+			updateBarsWin(msg, barsWin, *colors, currentScale)
 		case exitStatus = <-exitCh:
 			break main
 		}
@@ -136,6 +144,15 @@ main:
 	gc.End()
 	INFO.Println("exiting with status ", exitStatus)
 	return exitStatus
+}
+
+func calculateScale(max int64) int64 {
+	if max == 0 {
+		return 1
+	} else {
+		// 25 is the number of rows in the window, s/b dynamic or defined elsewhere
+		return int64(max/25) + 1
+	}
 }
 
 func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
@@ -176,6 +193,8 @@ func drawDisplay(
 	durWin *gc.Window,
 	reqSecWin *gc.Window,
 	barsWin *gc.Window,
+	scaleWin *gc.Window,
+	maxWin *gc.Window,
 ) {
 
 	// print startup message
@@ -227,10 +246,35 @@ func drawDisplay(
 	barsWidth := secondsPerMinute + 3 // we wrap after a minute
 	barsHeight := 25                  // need to size this dynamically, TBD
 	barsY := msgHeight + 1
-	barsX := 1
+	barsX := 9 // leave space for scale window
 	barsWin = createWindow(barsHeight, barsWidth, barsY, barsX)
 	barsWin.Box(0, 0)
 	barsWin.NoutRefresh()
+
+	// Max window, showing the max seen over the last 60 seconds
+	maxWidth := 7
+	maxHeight := 3
+	maxY := barsY + barsHeight - 8
+	maxX := 1
+	stdscr.MovePrint(maxY, 1, "max:")
+	stdscr.NoutRefresh()
+	maxY += 1
+	maxWin = createWindow(maxHeight, maxWidth, maxY, maxX)
+	maxWin.Box(0, 0)
+	maxWin.NoutRefresh()
+
+	// Scale window, showing our current scaling factor for the bars display
+	scaleWidth := 7
+	scaleHeight := 3
+	scaleY := barsY + barsHeight - 4
+	scaleX := 1
+	stdscr.MovePrint(scaleY, 1, "scale:")
+	stdscr.NoutRefresh()
+	scaleY += 1
+	scaleWin = createWindow(scaleHeight, scaleWidth, scaleY, scaleX)
+	scaleWin.Box(0, 0)
+	scaleWin.MovePrint(1, 1, fmt.Sprintf("%5s", "1"))
+	scaleWin.NoutRefresh()
 
 	// Update will flush only the characters which have changed between the
 	// physical screen and the virtual screen, minimizing the number of
@@ -265,7 +309,7 @@ func updateMsgWin(msg ncursesMsg, msgWin *gc.Window, workerCountWin *gc.Window) 
 		workerCountWin.NoutRefresh()
 	}
 }
-func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
+func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined, scale int64) {
 
 	whiteOnBlack := colors.whiteOnBlack
 	redOnBlack := colors.redOnBlack
@@ -280,13 +324,17 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 		startI = 0
 	}
 	currentSec := time.Now().Second()
+	prevSec := currentSec - 1
+	if prevSec < 0 {
+		prevSec = 59
+	}
 	for row := 0; row < barsHeight-2; row++ {
 		for col := range edibleCopy[startI:len(edibleCopy)] {
-			if edibleCopy[col] > 0 {
+			if edibleCopy[col]/scale > 0 {
 				turnOffColor := int16(0)
 				currChar := "="
 				// row is an int--32-bit, right?
-				if int(msg.failCols[col]) > row {
+				if shouldShowFail(msg.failCols[col], scale, row) {
 					barsWin.ColorOff(whiteOnBlack)
 					barsWin.ColorOn(redOnBlack)
 					currChar = "x"
@@ -294,22 +342,38 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined) {
 
 				} else if col == currentSec ||
 					col == currentSec-1 {
-					// current second is in progress, so make the previous second green too
-					// not precisely correct, but close enough here
+					// current second is still in progress, so make the previous second
+					// green too--not precisely correct, but close enough here
 					barsWin.ColorOff(whiteOnBlack)
 					barsWin.ColorOn(greenOnBlack)
 					turnOffColor = greenOnBlack
 				}
+
 				barsWin.MovePrint(barsHeight-2-row, col+1, currChar)
+
 				if turnOffColor != 0 {
 					barsWin.ColorOff(turnOffColor)
 					barsWin.ColorOn(whiteOnBlack)
 				}
-				edibleCopy[col]--
+
+				edibleCopy[col] = edibleCopy[col] - scale
 			}
 		}
 	}
 	barsWin.NoutRefresh()
+}
+
+// Called from updateBarsWin
+// The scale factor would result in a fractional value if there's
+// only one fail this second--we always want to show a fail marker
+// if there are *any* fails, otherwise they become invisible
+func shouldShowFail(numFailsThisSec int64, scale int64, rowNum int) bool {
+	if numFailsThisSec/scale > int64(rowNum) ||
+		rowNum == 0 && numFailsThisSec > 0 {
+		return true
+	} else {
+		return false
+	}
 }
 
 func windowRunloop(
@@ -426,7 +490,7 @@ func requester(
 			reqMadeOnSecCh <- nowSec
 			if err == nil && resp.StatusCode == 200 {
 				INFO.Println(id, "/", i, " fetch ok ")
-				infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
+				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
 			} else if err != nil {
 				ERROR.Println("http get failed: ", err)
 				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
@@ -438,7 +502,7 @@ func requester(
 			}
 
 			// just for development
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 		if shutdownNow {
 			return
@@ -470,7 +534,9 @@ func barsController(
 			failsForSecond.IncrementAt(second)
 		case <-timeToRedraw:
 			barsToDrawCh <- currentBars{
-				requestsForSecond.GetArray(), failsForSecond.GetArray(),
+				requestsForSecond.GetArray(),
+				failsForSecond.GetArray(),
+				requestsForSecond.GetMax(),
 			}
 		}
 	}

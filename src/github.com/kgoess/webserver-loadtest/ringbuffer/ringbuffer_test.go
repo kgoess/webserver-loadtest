@@ -77,6 +77,18 @@ func TestRingbufferAtFunctions( t *testing.T){
 	if x := rb.GetVal(); x != 14 {
 		t.Errorf("value at pos 3 s/b 7+7=14, got %v", x)
 	}
+}
+
+func TestRingBufferMax(t *testing.T){
+	rb := Ringbuffer{}
+
+	rb.IncrementAtBy(2,20)
+	rb.IncrementAtBy(5,45)
+	rb.IncrementAtBy(6,10)
+
+    if x := rb.GetMax(); x != 45 {
+        t.Errorf("max value s/b 45, got %v ", x)
+    }
 
 }
 
