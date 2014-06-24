@@ -6,6 +6,7 @@ import (
 	//"io"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -68,6 +69,9 @@ func main() {
 	}
 	log.SetOutput(logWriter)
 
+	TRACE = log.New(ioutil.Discard,
+		"TRACE: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
 	INFO = log.New(logWriter,
 		"INFO: ",
 		log.Ldate|log.Ltime|log.Lshortfile)
@@ -120,10 +124,10 @@ main:
 			updateMsgWin(msg, msgWin, workerCountWin)
 		case msg := <-durationDisplayCh:
 			// that %7s should really be determined from durWidth
-			durWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+			durWin.MovePrint(1, 1, fmt.Sprintf("%8s", msg))
 			durWin.NoutRefresh()
 		case msg := <-reqSecDisplayCh:
-			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%7s", msg))
+			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%14s", msg))
 			reqSecWin.NoutRefresh()
 		case msg := <-barsToDrawCh:
 			currentScale = calculateScale(msg.max)
@@ -222,20 +226,20 @@ func drawDisplay(
 	workerCountWin.NoutRefresh()
 
 	// Create the avg duration window, showing 5 second moving average
-	durHeight, durWidth := 3, 9
+	durHeight, durWidth := 3, 10
 	durY := 2
 	durX := ctrX + ctrWidth + 1
-	stdscr.MovePrint(1, durX+1, "av dur")
+	stdscr.MovePrint(1, durX+1, "av dur 5")
 	stdscr.NoutRefresh()
 	durWin = createWindow(durHeight, durWidth, durY, durX)
 	durWin.Box(0, 0)
 	durWin.NoutRefresh()
 
 	// Create the requests/sec window,
-	reqSecHeight, reqSecWidth := 3, 9
+	reqSecHeight, reqSecWidth := 3, 16
 	reqSecY := 2
 	reqSecX := durX + durWidth + 1
-	stdscr.MovePrint(1, reqSecX+1, "req/s")
+	stdscr.MovePrint(1, reqSecX+1, "req/s 1/5/60")
 	stdscr.NoutRefresh()
 	reqSecWin = createWindow(reqSecHeight, reqSecWidth, reqSecY, reqSecX)
 	reqSecWin.Box(0, 0)
@@ -489,7 +493,7 @@ func requester(
 			nowSec := time.Now().Second()
 			reqMadeOnSecCh <- nowSec
 			if err == nil && resp.StatusCode == 200 {
-				INFO.Println(id, "/", i, " fetch ok ")
+				TRACE.Println(id, "/", i, " fetch ok ")
 				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
 			} else if err != nil {
 				ERROR.Println("http get failed: ", err)
@@ -550,7 +554,8 @@ func statsWinsController(
 ) {
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
-	lookbackSecs := 3
+	lookbackSecs := 5
+	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
@@ -585,7 +590,17 @@ func statsWinsController(
 				durationDisplayCh <- "0"
 			}
 
-			reqSecDisplayCh <- fmt.Sprintf("%d", countForSecond.GetPrevVal())
+			if secsSeen <= 60 {
+				secsSeen++
+			}
+
+			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
+				countForSecond.GetPrevVal(),
+				// won't be accurate for first five secs
+				countForSecond.SumPrevN(5)/5,
+				countForSecond.SumPrevN(secsSeen)/
+					int64(secsSeen),
+			)
 		}
 	}
 }

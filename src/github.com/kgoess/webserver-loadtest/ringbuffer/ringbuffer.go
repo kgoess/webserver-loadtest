@@ -5,7 +5,7 @@ import "log"
 
 // debugging kludge--is this really the way to share global loggers?
 var (
-	INFO    *log.Logger
+	INFO *log.Logger
 )
 
 type Ringbuffer struct {
@@ -20,10 +20,10 @@ func MakeNew(infolog *log.Logger) *Ringbuffer {
 	return rb
 }
 
-func (rb *Ringbuffer) advanceWithTimer(){
+func (rb *Ringbuffer) advanceWithTimer() {
 	ticker := time.Tick(1 * time.Second)
 	for now := range ticker {
-		currentSecond := now.Second();
+		currentSecond := now.Second()
 		if currentSecond > 59 {
 			currentSecond = 0
 		}
@@ -40,11 +40,20 @@ func (rb *Ringbuffer) GetVal() int64 {
 func (rb *Ringbuffer) GetValAt(val int) int64 {
 	return rb.array[val]
 }
+func (rb *Ringbuffer) GetValAtRelative(vector int) int64 {
+	i := rb.head + vector // vector can be negative
+	if i > 59 {
+		i -= 60
+	} else if i < 0 {
+		i = 60 + i
+	}
+	return rb.array[i]
+}
 
 func (rb *Ringbuffer) GetPrevVal() int64 {
 	i := rb.head
 	i--
-	if i < 0{
+	if i < 0 {
 		i = len(rb.array) - 1
 	}
 	return rb.array[i]
@@ -62,7 +71,7 @@ func (rb *Ringbuffer) ChangeHeadBy(val int64) int64 {
 
 func (rb *Ringbuffer) IncrementAt(i int) {
 	// this will panic on index out-of-bounds, that's good
-	rb.array[i] ++
+	rb.array[i]++
 }
 
 func (rb *Ringbuffer) IncrementAtBy(i int, val int64) int64 {
@@ -70,7 +79,6 @@ func (rb *Ringbuffer) IncrementAtBy(i int, val int64) int64 {
 
 	return rb.array[i]
 }
-
 
 func (rb *Ringbuffer) AdvanceHead() {
 	rb.head += 1
@@ -88,10 +96,10 @@ func (rb *Ringbuffer) AdvanceHeadBy(delta int) {
 func (rb *Ringbuffer) ResetNextVal() {
 	i := rb.head
 	i++
-	if i >= len(rb.array){
+	if i >= len(rb.array) {
 		i = 0
 	}
-	rb.array[i]= 0
+	rb.array[i] = 0
 }
 
 func (rb *Ringbuffer) Length() int {
@@ -99,17 +107,26 @@ func (rb *Ringbuffer) Length() int {
 }
 
 func (rb *Ringbuffer) GetArray() []int64 {
-	return rb.array[:]  // right?
+	return rb.array[:] // right?
 }
 
 func (rb *Ringbuffer) GetMax() int64 {
-    var max = int64(0)
+	var max = int64(0)
 	for i := range rb.array {
-        if rb.array[i] > max {
-            max = rb.array[i]
-        }
-    }
-    return max
+		if rb.array[i] > max {
+			max = rb.array[i]
+		}
+	}
+	return max
 }
 
+func (rb *Ringbuffer) SumPrevN(n int) int64 {
 
+	var sum int64 = 0
+
+	for i := 0; i < n; i++ {
+		vector := (i * -1) - 1
+		sum += rb.GetValAtRelative(vector)
+	}
+	return sum
+}

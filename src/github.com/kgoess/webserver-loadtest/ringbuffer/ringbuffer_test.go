@@ -4,7 +4,6 @@ import "testing"
 
 //import "fmt"
 
-
 func TestRingbufferBasic(t *testing.T) {
 	rb := Ringbuffer{}
 
@@ -53,15 +52,15 @@ func TestRingbufferBasic(t *testing.T) {
 	}
 }
 
-func TestRingbufferAtFunctions( t *testing.T){
+func TestRingbufferAtFunctions(t *testing.T) {
 	rb := Ringbuffer{}
 
 	rb.IncrementAt(2)
 	rb.IncrementAt(2)
 	rb.IncrementAt(2)
 
-	rb.IncrementAtBy(3,7)
-	rb.IncrementAtBy(3,7)
+	rb.IncrementAtBy(3, 7)
+	rb.IncrementAtBy(3, 7)
 
 	rb.AdvanceHead() // to #1
 	if x := rb.GetVal(); x != 0 {
@@ -79,17 +78,35 @@ func TestRingbufferAtFunctions( t *testing.T){
 	}
 }
 
-func TestRingBufferMax(t *testing.T){
+func TestRingBufferMax(t *testing.T) {
 	rb := Ringbuffer{}
 
-	rb.IncrementAtBy(2,20)
-	rb.IncrementAtBy(5,45)
-	rb.IncrementAtBy(6,10)
+	rb.IncrementAtBy(2, 20)
+	rb.IncrementAtBy(5, 45)
+	rb.IncrementAtBy(6, 10)
 
-    if x := rb.GetMax(); x != 45 {
-        t.Errorf("max value s/b 45, got %v ", x)
-    }
+	if x := rb.GetMax(); x != 45 {
+		t.Errorf("max value s/b 45, got %v ", x)
+	}
 
+}
+
+func TestRingBufferSumPrevN(t *testing.T) {
+	rb := Ringbuffer{}
+
+	rb.IncrementAtBy(59, 20) // included in SumPrevN(1)
+	rb.IncrementAtBy(55, 45) // included in SumPrevN(5)
+	rb.IncrementAtBy(10, 10) // included in SumPrevN(60)
+
+	if x := rb.SumPrevN(1); x != 20 {
+		t.Errorf("SumPrevN(1) s/b 20, got %v ", x)
+	}
+	if x := rb.SumPrevN(5); x != 65 {
+		t.Errorf("SumPrevN(1) s/b 20, got %v ", x)
+	}
+	if x := rb.SumPrevN(60); x != 75 {
+		t.Errorf("SumPrevN(60) s/b 75, got %v ", x)
+	}
 }
 
 /*
