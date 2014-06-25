@@ -226,10 +226,10 @@ func drawDisplay(
 	workerCountWin.NoutRefresh()
 
 	// Create the avg duration window, showing 5 second moving average
-	durHeight, durWidth := 3, 10
+	durHeight, durWidth := 4, 14
 	durY := 2
 	durX := ctrX + ctrWidth + 1
-	stdscr.MovePrint(1, durX+1, "av dur 5")
+	stdscr.MovePrint(1, durX+1, "duration")
 	stdscr.NoutRefresh()
 	durWin = createWindow(durHeight, durWidth, durY, durX)
 	durWin.Box(0, 0)
@@ -571,21 +571,13 @@ func statsWinsController(
 			totalDurForSecond.ChangeHeadBy(dur)
 			countForSecond.IncrementHead()
 		case <-timeToRedraw:
-			currSec := time.Now().Second()
 
-			var windowDur int64
-			var windowCount int64
-			for i := currSec - lookbackSecs; i < currSec; i++ {
-				index := i
-				if index < 0 {
-					index += 60
-				}
-				windowDur += totalDurForSecond.GetValAt(index)
-				windowCount += countForSecond.GetValAt(index)
-			}
+			windowDur := totalDurForSecond.SumPrevN(lookbackSecs)
+			windowCount := countForSecond.SumPrevN(lookbackSecs)
+
 			if windowCount > 0 {
 				avgDur := float64(windowDur) / float64(windowCount)
-				durationDisplayCh <- fmt.Sprintf("%4.2f", avgDur)
+				durationDisplayCh <- fmt.Sprintf("%11.2f\n (avg last %d)", avgDur, lookbackSecs)
 			} else {
 				durationDisplayCh <- "0"
 			}
