@@ -124,7 +124,7 @@ main:
 			updateMsgWin(msg, msgWin, workerCountWin)
 		case msg := <-durationDisplayCh:
 			// that %7s should really be determined from durWidth
-			durWin.MovePrint(1, 1, fmt.Sprintf("%8s", msg))
+			durWin.MovePrint(1, 1, fmt.Sprintf("%11s", msg))
 			durWin.NoutRefresh()
 		case msg := <-reqSecDisplayCh:
 			reqSecWin.MovePrint(1, 1, fmt.Sprintf("%14s", msg))
