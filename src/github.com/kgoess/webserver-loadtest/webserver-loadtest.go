@@ -36,6 +36,12 @@ type ncursesMsg struct {
 	msgType      int
 }
 
+type bytesPerSecMsg struct {
+	bytes         int64
+	duration      time.Duration
+	receivedOnSec int
+}
+
 type currentBars struct {
 	cols     []int64
 	failCols []int64
@@ -102,13 +108,16 @@ func realMain() int {
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
 	reqSecDisplayCh := make(chan string)
+	bytesPerSecCh := make(chan bytesPerSecMsg)
+	bytesPerSecDisplayCh := make(chan string)
 	barsToDrawCh := make(chan currentBars)
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
+	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
 	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
+	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
 	var exitStatus int
 	currentScale := int64(1)
@@ -136,6 +145,8 @@ main:
 			scaleWin.MovePrint(1, 1, fmt.Sprintf("%5d", currentScale))
 			scaleWin.NoutRefresh()
 			updateBarsWin(msg, barsWin, *colors, currentScale)
+		case msg := <-bytesPerSecDisplayCh:
+			INFO.Println("bytes/sec for each request: ", msg)
 		case exitStatus = <-exitCh:
 			break main
 		}
@@ -228,7 +239,7 @@ func drawDisplay(
 	durHeight, durWidth := 4, 14
 	durY := 2
 	durX := ctrX + ctrWidth + 1
-	stdscr.MovePrint(1, durX+1, "duration")
+	stdscr.MovePrint(1, durX+1, "duration ms")
 	stdscr.NoutRefresh()
 	durWin = createWindow(durHeight, durWidth, durY, durX)
 	durWin.Box(0, 0)
@@ -428,6 +439,7 @@ func requesterController(
 	reqMadeOnSecCh chan<- int,
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
+	bytesPerSecCh chan<- bytesPerSecMsg,
 	testUrl string,
 	introduceRandomFails int,
 ) {
@@ -443,7 +455,7 @@ func requesterController(
 				shutdownChan := make(chan int)
 				chans = append(chans, shutdownChan)
 				chanId := len(chans) - 1
-				go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, durationCh, testUrl, introduceRandomFails)
+				go requester(infoMsgsCh, shutdownChan, chanId, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
 			} else if upOrDown == -1 && len(chans) > 0 {
 				//send shutdown message
 				chans[len(chans)-1] <- 1
@@ -463,6 +475,7 @@ func requester(
 	reqMadeOnSecCh chan<- int,
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
+	bytesPerSecCh chan<- bytesPerSecMsg,
 	testUrl string,
 	introduceRandomFails int,
 ) {
@@ -484,13 +497,27 @@ func requester(
 				thisUrl = thisUrlStruct.String()
 			}
 			hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
+
+			// make the request and time it
 			t0 := time.Now()
 			resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
 			t1 := time.Now()
-			resp.Body.Close()
-			durationCh <- int64(t1.Sub(t0) / time.Millisecond)
+			resp.Body.Close() // this only works if ! err
+
+			// report the duration
+			duration := int64(t1.Sub(t0) / time.Millisecond)
+			durationCh <- duration
+
+			// report that we made a request this second
 			nowSec := time.Now().Second()
 			reqMadeOnSecCh <- nowSec
+
+			// report on the number of bytes
+			bytesPerSecCh <- bytesPerSecMsg{
+				bytes:         resp.ContentLength,
+				duration:      time.Duration(duration),
+				receivedOnSec: nowSec,
+			}
 			if err == nil && resp.StatusCode == 200 {
 				TRACE.Println(id, "/", i, " fetch ok ")
 				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
@@ -593,6 +620,39 @@ func statsWinsController(
 			)
 		}
 	}
+}
+
+func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDisplayCh chan<- string) {
+
+	bytesRecdForSecond := rb.MakeNew(INFO)
+	durationForSecond := rb.MakeNew(INFO)
+	lookbackSecs := 5
+
+	timeToRedraw := make(chan bool)
+	go func(timeToRedraw chan bool) {
+		for {
+			time.Sleep(1000 * time.Millisecond)
+			timeToRedraw <- true
+		}
+	}(timeToRedraw)
+
+	for {
+		select {
+		case msg := <-bytesPerSecCh:
+			bytesRecdForSecond.IncrementAtBy(msg.receivedOnSec, msg.bytes)
+			durationForSecond.IncrementAtBy(msg.receivedOnSec, int64(msg.duration))
+		case <-timeToRedraw:
+			windowDur := durationForSecond.SumPrevN(lookbackSecs)
+			windowBytes := bytesRecdForSecond.SumPrevN(lookbackSecs)
+			// divide-by-zero guard
+			if windowDur == 0 {
+				windowDur = 1
+			}
+			bytesPerSecDisplayCh <- fmt.Sprintf("%10.2f", float64(windowBytes)/float64(windowDur)*1000)
+		}
+
+	}
+
 }
 
 /*

@@ -28,7 +28,7 @@ func (rb *Ringbuffer) advanceWithTimer() {
 			currentSecond = 0
 		}
 		rb.head = currentSecond
-	    rb.ResetNextVal()
+		rb.ResetNextVal()
 	}
 }
 
@@ -41,7 +41,7 @@ func (rb *Ringbuffer) GetValAt(val int) int64 {
 }
 func (rb *Ringbuffer) GetValAtRelative(vector int) int64 {
 	i := rb.head + vector // vector can be negative
-	i = i % 60 // so it wraps around
+	i = i % 60            // so it wraps around
 	if i > 59 {
 		i -= 60
 	} else if i < 0 {
@@ -126,8 +126,8 @@ func (rb *Ringbuffer) SumPrevN(n int) int64 {
 
 	for i := 0; i < n; i++ {
 		vector := (-1 * i) - 1
+		// definitely racy--what if the timer moves head while we're looping?
 		sum += rb.GetValAtRelative(vector)
 	}
 	return sum
 }
-
