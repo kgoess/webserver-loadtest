@@ -101,7 +101,6 @@ func realMain() int {
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
-	reqSecCh := make(chan int64)
 	reqSecDisplayCh := make(chan string)
 	barsToDrawCh := make(chan currentBars)
 
@@ -109,7 +108,7 @@ func realMain() int {
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
 	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
-	go statsWinsController(durationCh, durationDisplayCh, reqSecCh, reqSecDisplayCh)
+	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
 
 	var exitStatus int
 	currentScale := int64(1)
@@ -381,9 +380,9 @@ func shouldShowFail(numFailsThisSec int64, scale int64, rowNum int) bool {
 }
 
 func windowRunloop(
-	infoMsgsCh chan ncursesMsg,
-	exitCh chan int,
-	changeNumRequestersCh chan int,
+	infoMsgsCh chan<- ncursesMsg,
+	exitCh chan<- int,
+	changeNumRequestersCh chan<- int,
 	win *gc.Window,
 ) {
 	threadCount := 0
@@ -402,8 +401,8 @@ func windowRunloop(
 }
 
 func increaseThreads(
-	infoMsgsCh chan ncursesMsg,
-	changeNumRequestersCh chan int,
+	infoMsgsCh chan<- ncursesMsg,
+	changeNumRequestersCh chan<- int,
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -413,8 +412,8 @@ func increaseThreads(
 }
 
 func decreaseThreads(
-	infoMsgsCh chan ncursesMsg,
-	changeNumRequestersCh chan int,
+	infoMsgsCh chan<- ncursesMsg,
+	changeNumRequestersCh chan<- int,
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -424,11 +423,11 @@ func decreaseThreads(
 }
 
 func requesterController(
-	infoMsgsCh chan ncursesMsg,
-	changeNumRequestersCh chan int,
-	reqMadeOnSecCh chan int,
-	failsOnSecCh chan int,
-	durationCh chan int64,
+	infoMsgsCh chan<- ncursesMsg,
+	changeNumRequestersCh <-chan int,
+	reqMadeOnSecCh chan<- int,
+	failsOnSecCh chan<- int,
+	durationCh chan<- int64,
 	testUrl string,
 	introduceRandomFails int,
 ) {
@@ -458,12 +457,12 @@ func requesterController(
 }
 
 func requester(
-	infoMsgsCh chan ncursesMsg,
-	shutdownChan chan int,
+	infoMsgsCh chan<- ncursesMsg,
+	shutdownChan <-chan int,
 	id int,
-	reqMadeOnSecCh chan int,
-	failsOnSecCh chan int,
-	durationCh chan int64,
+	reqMadeOnSecCh chan<- int,
+	failsOnSecCh chan<- int,
+	durationCh chan<- int64,
 	testUrl string,
 	introduceRandomFails int,
 ) {
@@ -515,9 +514,9 @@ func requester(
 }
 
 func barsController(
-	reqMadeOnSecCh chan int,
-	failsOnSecCh chan int,
-	barsToDrawCh chan currentBars,
+	reqMadeOnSecCh <-chan int,
+	failsOnSecCh <-chan int,
+	barsToDrawCh chan<- currentBars,
 ) {
 	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
 	failsForSecond := rb.MakeNew(INFO)    // one column for each clock second
@@ -547,10 +546,9 @@ func barsController(
 }
 
 func statsWinsController(
-	durationCh chan int64,
-	durationDisplayCh chan string,
-	reqSecCh chan int64,
-	reqSecDisplayCh chan string,
+	durationCh <-chan int64,
+	durationDisplayCh chan<- string,
+	reqSecDisplayCh chan<- string,
 ) {
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
