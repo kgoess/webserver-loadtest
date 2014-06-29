@@ -42,6 +42,7 @@ func (rb *Ringbuffer) GetValAt(val int) int64 {
 }
 func (rb *Ringbuffer) GetValAtRelative(vector int) int64 {
 	i := rb.head + vector // vector can be negative
+	i = i % 60 // so it wraps around
 	if i > 59 {
 		i -= 60
 	} else if i < 0 {
@@ -125,8 +126,9 @@ func (rb *Ringbuffer) SumPrevN(n int) int64 {
 	var sum int64 = 0
 
 	for i := 0; i < n; i++ {
-		vector := (i * -1) - 1
+		vector := (-1 * i) - 1
 		sum += rb.GetValAtRelative(vector)
 	}
 	return sum
 }
+

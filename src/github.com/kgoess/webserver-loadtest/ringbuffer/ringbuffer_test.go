@@ -102,11 +102,48 @@ func TestRingBufferSumPrevN(t *testing.T) {
 		t.Errorf("SumPrevN(1) s/b 20, got %v ", x)
 	}
 	if x := rb.SumPrevN(5); x != 65 {
-		t.Errorf("SumPrevN(1) s/b 20, got %v ", x)
+		t.Errorf("SumPrevN(1) s/b 65, got %v ", x)
 	}
 	if x := rb.SumPrevN(60); x != 75 {
 		t.Errorf("SumPrevN(60) s/b 75, got %v ", x)
 	}
+}
+
+func TestRingbufferGetValAtRelative(t *testing.T){
+    rb := Ringbuffer{}
+    for i:= 0; i < 60; i++ {
+        rb.IncrementAtBy(i, int64(i+100))
+    }
+    // test wrapping going negative
+    for i := 0; i < 100; i++ {
+        index := -1 * i
+        expected := int64(160+index)
+        // this method of generating expected is stupid, but it works
+        if index == 0 {
+            expected = 100
+        }else if expected < 100{
+            expected += 60
+        }
+        if got := rb.GetValAtRelative(index); got != expected {
+            t.Errorf("GetValAtRelative(%d) s/b %d, got %d", index, expected, got)
+        }
+    }
+    // test wrapping going postive
+    for i := 0; i < 100; i++ {
+        index := i + 60
+        expected := int64(160+index)
+        // this method of generating expected is stupid, but it works
+        if index == 120 {
+            expected = 100
+        }else if index > 120 {
+            expected -= 180
+        }else if index > 59 {
+            expected -= 120
+       }
+        if got := rb.GetValAtRelative(index); got != expected {
+            t.Errorf("GetValAtRelative(%d) s/b %d, got %d", index, expected, got)
+        }
+    }
 }
 
 /*
