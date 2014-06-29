@@ -28,9 +28,8 @@ func (rb *Ringbuffer) advanceWithTimer() {
 			currentSecond = 0
 		}
 		rb.head = currentSecond
+	    rb.ResetNextVal()
 	}
-	// is this a race condition? need a lock here?
-	rb.ResetNextVal()
 }
 
 func (rb *Ringbuffer) GetVal() int64 {
