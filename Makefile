@@ -13,8 +13,9 @@ run: build
 ifndef TESTURL
 	$(error TESTURL is undefined)
 endif
+	# CONTROL could be --control 1.1.1.1:1000 --control 2.2.2.2:2000
 	cat /dev/null > loadtest.log
-	./$(TARGET) --url $(TESTURL) --random-fails $(RANDOM_FAILS)
+	./$(TARGET) --url $(TESTURL) --random-fails $(RANDOM_FAILS) $(LISTEN) $(CONTROL)
 
 build: .pkg-installed $(TARGET)
 

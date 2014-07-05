@@ -4,13 +4,17 @@ import (
 	gc "code.google.com/p/goncurses"
 	"log"
 	//"io"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"math/rand"
@@ -56,12 +60,72 @@ type colorsDefined struct {
 
 var testUrl = flag.String("url", "", "the url you want to beat on")
 var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
+var listen = flag.Int("listen", 0, "listen as a client for controller commands on this port")
 var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
+
+// a slice of strings holding ip:port combos
+type slaves []string
+
+// Now, for our new type, implement the two methods of
+// the flag.Value interface...
+// String is the method to format the flag's value, part of the flag.Value interface.
+// The String method's output will be used in diagnostics.
+func (z *slaves) String() string {
+	return fmt.Sprint(*z)
+}
+
+// The second method is Set(value string) error
+func (z *slaves) Set(value string) error {
+	var validAddr = regexp.MustCompile(z.validIpRegex())
+
+	for _, ipport := range strings.Split(value, ",") {
+		if !validAddr.Match([]byte(ipport)) {
+			return errors.New("Your '" + ipport + "' doesn't look like an ip:port")
+		}
+		*z = append(*z, ipport)
+	}
+	return nil
+}
+
+func (i *slaves) validIpRegex() string {
+
+	// http://stackoverflow.com/questions/53497/regular-expression-that-matches-valid-ipv6-addresses
+	IPV4SEG := "(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])"
+	IPV4ADDR := "(" + IPV4SEG + "\\.){3,3}" + IPV4SEG
+	IPV6SEG := "[0-9a-fA-F]{1,4}"
+	fulladdr := "(" + IPV6SEG + ":){7,7}" + IPV6SEG               // 1:2:3:4:5:6:7:8
+	collapse7 := "(" + IPV6SEG + ":){1,7}:"                       // 1::                                 1:2:3:4:5:6:7::
+	collapse6 := "(" + IPV6SEG + ":){1,6}:" + IPV6SEG             // 1::8               1:2:3:4:5:6::8   1:2:3:4:5:6::8
+	collapse5 := "(" + IPV6SEG + ":){1,5}(:" + IPV6SEG + "){1,2}" // 1::7:8             1:2:3:4:5::7:8   1:2:3:4:5::8
+	collapse4 := "(" + IPV6SEG + ":){1,4}(:" + IPV6SEG + "){1,3}" // 1::6:7:8           1:2:3:4::6:7:8   1:2:3:4::8
+	collapse3 := "(" + IPV6SEG + ":){1,3}(:" + IPV6SEG + "){1,4}" // 1::5:6:7:8         1:2:3::5:6:7:8   1:2:3::8
+	collapse2 := "(" + IPV6SEG + ":){1,2}(:" + IPV6SEG + "){1,5}" // 1::4:5:6:7:8       1:2::4:5:6:7:8   1:2::8
+	collapse1 := IPV6SEG + ":((:" + IPV6SEG + "){1,6})"           // 1::3:4:5:6:7:8     1::3:4:5:6:7:8   1::8
+	collapse0 := ":((:" + IPV6SEG + "){1,7}|:)"                   // ::2:3:4:5:6:7:8    ::2:3:4:5:6:7:8  ::8       ::
+	linklocal := "fe80:(:" + IPV6SEG + "){0,4}%[0-9a-zA-Z]{1,}"   // fe80::7:8%eth0     fe80::7:8%1  (link-local IPv6 addresses with zone index)
+	ip4mapped := "::(ffff(:0{1,4}){0,1}:){0,1}" + IPV4ADDR        // ::255.255.255.255  ::ffff:255.255.255.255  ::ffff:0:255.255.255.255 (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
+	ip4embedd := "(" + IPV6SEG + ":){1,4}:" + IPV4ADDR            // 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
+	IPV6ADDR := "(" + fulladdr + "|" + collapse7 + "|" + collapse6 + "|" +
+		collapse5 + "|" + collapse4 + "|" + collapse3 + "|" + collapse2 + "|" +
+		collapse1 + "|" + collapse0 + "|" + linklocal + "|" + ip4mapped + "|" + ip4embedd + ")"
+	IPADDR := "(" + IPV4ADDR + "|" + IPV6ADDR + ")"
+
+	IPPORT := "^" + IPADDR + ":\\d+$"
+	return IPPORT
+}
+
+var slaveList slaves
 
 // Remember Exit(0) is success, Exit(1) is failure
 func main() {
+	flag.Var(&slaveList, "control", "list of ip:port addresses to control")
 	flag.Parse()
 	if len(*testUrl) == 0 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	if len(slaveList) > 0 && *listen != 0 {
+		fmt.Fprintf(os.Stderr, "You can't have both --listen and --control flags")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -89,12 +153,25 @@ func main() {
 	os.Exit(realMain())
 }
 
+type resetScreenFn func()
+
 // Why realMain? See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
 // So that defer will run propoerly
-func realMain() int {
+func realMain() (exitStatus int) {
 
 	// initialize ncurses
-	stdscr, colors := initializeNcurses()
+	stdscr, colors, resetScreen := initializeNcurses()
+
+	// clean up the screen before we die
+	defer func() {
+		if err := recover(); err != nil {
+			resetScreen()
+			fmt.Fprintf(os.Stderr, "exiting from error: %s \n", err)
+			ERROR.Println("exiting from error: ", err)
+			exitStatus = 1
+			os.Exit(1)
+		}
+	}()
 
 	// draw the stuff on the screen
 	msgWin, workerCountWin, durWin, reqSecWin, barsWin, scaleWin, maxWin := drawDisplay(stdscr)
@@ -119,7 +196,13 @@ func realMain() int {
 	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
-	var exitStatus int
+	if *listen > 0 {
+		port := *listen
+		go listenForMaster(port, changeNumRequestersCh)
+	} else if len(slaveList) > 0 {
+		connectToSlaves(slaveList, changeNumRequestersCh)
+	}
+
 	currentScale := int64(1)
 
 	// This is the main loop controlling the ncurses display. Since ncurses
@@ -169,13 +252,16 @@ func calculateScale(max int64) int64 {
 	}
 }
 
-func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
+func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined, resetScreen resetScreenFn) {
 
 	stdscr, err := gc.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer gc.End()
+	resetScreen = func() {
+		gc.End()
+	}
 
 	// Turn off character echo, hide the cursor and disable input buffering
 	gc.Echo(false)
@@ -652,7 +738,73 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 		}
 
 	}
+}
 
+func listenForMaster(port int, changeNumRequestersCh chan int) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		go handleConnection(conn, changeNumRequestersCh)
+	}
+}
+
+func connectToSlaves(slaveList slaves, changeNumRequestersCh <-chan int) {
+
+	for _, slaveAddr := range slaveList {
+		INFO.Println("connecting to slave " + slaveAddr)
+		conn, err := net.Dial("tcp", slaveAddr)
+		if err != nil {
+			panic("Dial failed:" + err.Error())
+		}
+		go talkToSlave(conn, changeNumRequestersCh)
+	}
+}
+
+func talkToSlave(conn net.Conn, changeNumRequestersCh <-chan int) {
+	for {
+		select {
+		case msg := <-changeNumRequestersCh:
+			fmt.Fprintf(conn, "%d", msg)
+		}
+
+	}
+
+}
+
+func handleConnection(c net.Conn, changeNumRequestersCh chan int) {
+	buf := make([]byte, 4096)
+	okbuf := []byte("ok")
+
+	for {
+		c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, err := c.Read(buf)
+		if err != nil || n == 0 {
+			c.Close()
+			break
+		}
+
+		//n, err = c.Write(buf[0:n])
+		delta := string(buf[:n])
+		requesterDelta, err := strconv.ParseInt(delta, 10, 0)
+		if err != nil {
+			INFO.Println("got a wonky message from the network: %s (%s)", delta, requesterDelta)
+			break
+		}
+		changeNumRequestersCh <- int(requesterDelta)
+		n, err = c.Write(okbuf)
+		if err != nil {
+			c.Close()
+			break
+		}
+	}
+	log.Printf("Connection from %v closed.", c.RemoteAddr())
 }
 
 /*
