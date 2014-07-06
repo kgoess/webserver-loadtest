@@ -31,6 +31,7 @@ $(TARGET): .pkg-installed $(SRCDIR)/webserver-loadtest.go
 
 test: 
 	go test github.com/kgoess/webserver-loadtest/ringbuffer
+	go test github.com/kgoess/webserver-loadtest/bcast
 
 help:
 	@echo "e.g. make TESTURL=http://..."
