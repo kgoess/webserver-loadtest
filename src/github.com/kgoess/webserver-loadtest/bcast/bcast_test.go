@@ -44,12 +44,12 @@ func TestBcastBasic(t *testing.T) {
     // so need to unjoin
     close(subscriberCh2)
     bcaster.Unjoin(subscriberCh2)
-    testCh <- "happy birthday"
-    if msg = <-subscriberCh1; msg != "happy birthday" {
-        t.Errorf("expected happy birthday, got %v", msg)
+    testCh <- "pity da foo"
+    if msg = <-subscriberCh1; msg != "pity da foo" {
+        t.Errorf("expected pity da foo, got %v", msg)
     }
-    if msg = <-subscriberCh3; msg != "happy birthday" {
-        t.Errorf("expected happy birthday, got %v", msg)
+    if msg = <-subscriberCh3; msg != "pity da foo" {
+        t.Errorf("expected pity da foo, got %v", msg)
     }
 
     // test the convenience method

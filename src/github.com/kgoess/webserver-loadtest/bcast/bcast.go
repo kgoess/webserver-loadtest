@@ -11,12 +11,12 @@ var (
 
 
 type Bcast struct {
-    incomingCh chan interface{} // so it'll take anything
+    incomingCh <-chan interface{} // so it'll take anything
     subscribers []chan interface{}
 }
 
 // I don't feel like I'm doing constructors right
-func MakeNew (infoLog *log.Logger, incomingCh chan interface{}) *Bcast {
+func MakeNew (incomingCh <-chan interface{}, infoLog *log.Logger) *Bcast {
 
     bcaster := new(Bcast)
     bcaster.incomingCh = incomingCh

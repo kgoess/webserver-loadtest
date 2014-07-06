@@ -19,6 +19,7 @@ import (
 
 	"math/rand"
 
+	bcast "github.com/kgoess/webserver-loadtest/bcast"
 	rb "github.com/kgoess/webserver-loadtest/ringbuffer"
 )
 
@@ -179,7 +180,8 @@ func realMain() (exitStatus int) {
 	// create our various channels
 	infoMsgsCh := make(chan ncursesMsg)
 	exitCh := make(chan int)
-	changeNumRequestersCh := make(chan int)
+	changeNumRequestersCh := make(chan interface{})
+	changeNumRequestersListenerCh := make(chan interface{})
 	reqMadeOnSecCh := make(chan int)
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
@@ -191,16 +193,19 @@ func realMain() (exitStatus int) {
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
 	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
+	go requesterController(infoMsgsCh, changeNumRequestersListenerCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
 	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
+
+	bcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
+	bcaster.Join(changeNumRequestersListenerCh)
 
 	if *listen > 0 {
 		port := *listen
 		go listenForMaster(port, changeNumRequestersCh)
 	} else if len(slaveList) > 0 {
-		connectToSlaves(slaveList, changeNumRequestersCh)
+		connectToSlaves(slaveList, bcaster)
 	}
 
 	currentScale := int64(1)
@@ -229,7 +234,14 @@ main:
 			scaleWin.NoutRefresh()
 			updateBarsWin(msg, barsWin, *colors, currentScale)
 		case msg := <-bytesPerSecDisplayCh:
-			INFO.Println("bytes/sec for each request: ", msg)
+			//msgAsFloat64, err := strconv.ParseFloat(msg, 64)
+			//if err != nil {
+			//    panic(fmt.Sprintf("converting %s failed: %v", msg, err))
+			//}
+			//if msgAsFloat64 > 0 {
+			if msg != "      0.00" {
+				INFO.Println("bytes/sec for each request: ", msg)
+			}
 		case exitStatus = <-exitCh:
 			break main
 		}
@@ -479,7 +491,7 @@ func shouldShowFail(numFailsThisSec int64, scale int64, rowNum int) bool {
 func windowRunloop(
 	infoMsgsCh chan<- ncursesMsg,
 	exitCh chan<- int,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 ) {
 	threadCount := 0
@@ -499,7 +511,7 @@ func windowRunloop(
 
 func increaseThreads(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -510,7 +522,7 @@ func increaseThreads(
 
 func decreaseThreads(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -521,7 +533,7 @@ func decreaseThreads(
 
 func requesterController(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh <-chan int,
+	changeNumRequestersListenerCh <-chan interface{},
 	reqMadeOnSecCh chan<- int,
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
@@ -536,7 +548,7 @@ func requesterController(
 
 	for {
 		select {
-		case upOrDown := <-changeNumRequestersCh:
+		case upOrDown := <-changeNumRequestersListenerCh:
 			if upOrDown == 1 {
 				shutdownChan := make(chan int)
 				chans = append(chans, shutdownChan)
@@ -618,7 +630,7 @@ func requester(
 			}
 
 			// just for development
-			//time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 		if shutdownNow {
 			return
@@ -740,7 +752,7 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 	}
 }
 
-func listenForMaster(port int, changeNumRequestersCh chan int) {
+func listenForMaster(port int, changeNumRequestersCh chan interface{}) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatal(err)
@@ -755,7 +767,7 @@ func listenForMaster(port int, changeNumRequestersCh chan int) {
 	}
 }
 
-func connectToSlaves(slaveList slaves, changeNumRequestersCh <-chan int) {
+func connectToSlaves(slaveList slaves, bcaster *bcast.Bcast) {
 
 	for _, slaveAddr := range slaveList {
 		INFO.Println("connecting to slave " + slaveAddr)
@@ -763,14 +775,16 @@ func connectToSlaves(slaveList slaves, changeNumRequestersCh <-chan int) {
 		if err != nil {
 			panic("Dial failed:" + err.Error())
 		}
-		go talkToSlave(conn, changeNumRequestersCh)
+		slaveChan := make(chan interface{})
+		bcaster.Join(slaveChan)
+		go talkToSlave(conn, slaveChan)
 	}
 }
 
-func talkToSlave(conn net.Conn, changeNumRequestersCh <-chan int) {
+func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
 	for {
 		select {
-		case msg := <-changeNumRequestersCh:
+		case msg := <-changeNumRequestersSlaveCh:
 			fmt.Fprintf(conn, "%d", msg)
 		}
 
@@ -778,12 +792,12 @@ func talkToSlave(conn net.Conn, changeNumRequestersCh <-chan int) {
 
 }
 
-func handleConnection(c net.Conn, changeNumRequestersCh chan int) {
+func handleConnection(c net.Conn, changeNumRequestersCh chan interface{}) {
 	buf := make([]byte, 4096)
 	okbuf := []byte("ok")
 
 	for {
-		c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, err := c.Read(buf)
 		if err != nil || n == 0 {
 			c.Close()
