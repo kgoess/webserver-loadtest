@@ -1,7 +1,7 @@
 package bcast
 
 import "log" 
-import "fmt"
+//import "fmt"
 
 
 // debugging kludge--is this really the way to share global loggers?
@@ -44,5 +44,21 @@ func (b *Bcast) Join (listenerCh chan interface{}) {
     // read http://blog.golang.org/slices
     b.subscribers = append(b.subscribers, listenerCh)
 
-    fmt.Println(b.subscribers)
 }
+
+func (b *Bcast) Unjoin(listenerCh chan interface{}) {
+
+    // this definitely needs a lock around it TBD
+    for i, ch := range b.subscribers {
+       if ch == listenerCh {
+             b.subscribers = append(b.subscribers[:i], b.subscribers[i+1:]...)
+        }
+    }
+}
+
+// convenience method
+func (b *Bcast) UnjoinAndClose(listenerCh chan interface{}){
+    b.Unjoin(listenerCh)
+    close(listenerCh)
+}
+

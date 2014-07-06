@@ -40,8 +40,24 @@ func TestBcastBasic(t *testing.T) {
         t.Errorf("expected happy birthday, got %v", msg)
     }
 
-//    if x := rb.Length(); x != 60 {
-//        t.Errorf("length() = %v, want 60", x)
-//    }
+    // if we naively close a channel, the bcaster will crash
+    // so need to unjoin
+    close(subscriberCh2)
+    bcaster.Unjoin(subscriberCh2)
+    testCh <- "happy birthday"
+    if msg = <-subscriberCh1; msg != "happy birthday" {
+        t.Errorf("expected happy birthday, got %v", msg)
+    }
+    if msg = <-subscriberCh3; msg != "happy birthday" {
+        t.Errorf("expected happy birthday, got %v", msg)
+    }
+
+    // test the convenience method
+    bcaster.UnjoinAndClose(subscriberCh1)
+    testCh <- "happy birthday"
+    if msg = <-subscriberCh3; msg != "happy birthday" {
+        t.Errorf("expected happy birthday, got %v", msg)
+    }
+
 }
 
