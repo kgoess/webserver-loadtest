@@ -161,12 +161,15 @@ main:
 }
 
 func calculateScale(max int64) int64 {
+
+	var rc int64
 	if max == 0 {
-		return 1
+		rc = 1
 	} else {
 		// 25 is the number of rows in the window, s/b dynamic or defined elsewhere
-		return int64(max/25) + 1
+		rc = int64(max/25) + 1
 	}
+	return rc
 }
 
 func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
@@ -382,12 +385,14 @@ func updateBarsWin(msg currentBars, barsWin *gc.Window, colors colorsDefined, sc
 // only one fail this second--we always want to show a fail marker
 // if there are *any* fails, otherwise they become invisible
 func shouldShowFail(numFailsThisSec int64, scale int64, rowNum int) bool {
+	var rc bool
 	if numFailsThisSec/scale > int64(rowNum) ||
 		rowNum == 0 && numFailsThisSec > 0 {
-		return true
+		rc = true
 	} else {
-		return false
+		rc = false
 	}
+	return rc
 }
 
 func windowRunloop(
