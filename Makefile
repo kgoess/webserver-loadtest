@@ -33,4 +33,8 @@ test:
 
 help:
 	@echo "e.g. make TESTURL=http://..."
+	@echo "      CONTROL=\" --control 192.168.1.3:5000 \""
+	@echo "        --or-- "
+	@echo "      LISTEN=\" --listen 5000 \" "
 	@echo "     also RANDOM_FAILS=3 (30% fails)"
+
