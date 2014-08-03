@@ -74,7 +74,15 @@ func (i *Slaves) validIpRegex() string {
 	return IPPORT
 }
 
-func ListenForMaster(port int, changeNumRequestersCh chan interface{}) {
+func ListenForMaster(
+			port int, 
+			changeNumRequestersCh chan interface{}, 
+			reqMadeOnSecSlaveListenerCh chan interface{},
+			joinBcastCb func(),
+			infoLog *log.Logger, //better way?
+		) {
+	INFO = infoLog
+
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatal(err)
@@ -85,23 +93,23 @@ func ListenForMaster(port int, changeNumRequestersCh chan interface{}) {
 			log.Println(err)
 			continue
 		}
-		go handleConnectionFromMaster(conn, changeNumRequestersCh)
+		handleConnectionFromMaster(conn, changeNumRequestersCh, reqMadeOnSecSlaveListenerCh, joinBcastCb)
 	}
 }
 
 
-func handleConnectionFromMaster(c net.Conn, changeNumRequestersCh chan interface{}) {
+func handleConnectionFromMaster(
+			c net.Conn, 
+			changeNumRequestersCh chan<- interface{},
+			reqMadeOnSecSlaveListenerCh <-chan interface{},
+			joinBcastCb func(),
+		) {
 	buf := make([]byte, 4096)
-	msg := new(MsgFromSlave)
-	msg.Status = "ok" //not actually doing anything with this on the master yet
-	json, err := json.Marshal(msg)
-	if err != nil {
-		panic("can't marshal that")
-	}
 
 	for {
 		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, err := c.Read(buf)
+INFO.Println("we read something from master! ", n, err)
 		if err != nil || n == 0 {
 			c.Close()
 			break
@@ -114,12 +122,58 @@ func handleConnectionFromMaster(c net.Conn, changeNumRequestersCh chan interface
 			INFO.Println("got a wonky message from the network: %s (%s)", delta, requesterDelta)
 			break
 		}
+		go handleStatsToMaster(c, reqMadeOnSecSlaveListenerCh, joinBcastCb)
 		changeNumRequestersCh <- int(requesterDelta)
-		n, err = c.Write(json)
-		if err != nil {
-			c.Close()
-			break
-		}
 	}
 	log.Printf("Connection from %v closed.", c.RemoteAddr())
+}
+
+func handleStatsToMaster (
+			c net.Conn, 
+			reqMadeOnSecSlaveListenerCh <-chan interface{},
+			joinBcastCb func(),
+		){
+
+	//now that we're ready to start listening, we can join the bcaster
+INFO.Println("about to join, our channel is ", reqMadeOnSecSlaveListenerCh)
+	joinBcastCb()
+
+	for {
+		select {
+		case msg :=  <-reqMadeOnSecSlaveListenerCh:
+	INFO.Println("the slave got a reqMadeOnSecs msg from itself")
+			second := msg.(int)
+	INFO.Println("about to sendStatsToMaster ", second)
+			sendStatsToMaster(c, second)
+	INFO.Println("done sending stats to master")
+		}
+	}
+}
+
+func makeNewMsg() (MsgFromSlave){
+	msg := new(MsgFromSlave)
+	msg.StatsForSecond = make(map[string] int64)
+	return *msg
+}
+
+// we actually want to collect these, and only send them once a second
+// this is a first draft...
+func sendStatsToMaster(c net.Conn, second int){
+
+	msg := makeNewMsg()
+	//msg.Status = "ok" //not actually doing anything with this on the master yet
+	secondStr := fmt.Sprintf("%d", second);
+	msg.StatsForSecond[secondStr] = 1 // would accumulate them
+	json, err := json.Marshal(msg)
+	if err != nil {
+		panic(fmt.Sprintf("can't marshal that %v", err))
+	}
+
+	_, writeErr := c.Write(json)
+	if writeErr != nil {
+		c.Close()
+		// actually, this might mean that the server has shut down, don't need
+		INFO.Println("writing json to connection failed: %v", writeErr)
+		panic(fmt.Sprintf("writing json to connection failed: %v", writeErr))
+	}
 }

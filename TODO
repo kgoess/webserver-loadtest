@@ -1,5 +1,6 @@
 
  - next sec in the ringbuffer isn't getting cleared any more, wtf?
  - panic thrown by  resp.Body.Close() if network is off
+ - panic thrown by json-to-master in the slave if the master has disconnected
 
 

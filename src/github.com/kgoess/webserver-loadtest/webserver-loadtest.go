@@ -137,6 +137,7 @@ func realMain() (exitStatus int) {
 	changeNumRequestersListenerCh := make(chan interface{})
 	reqMadeOnSecCh := make(chan interface{})
 	reqMadeOnSecListenerCh := make(chan interface{})
+	reqMadeOnSecSlaveListenerCh := make(chan interface{})
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
@@ -160,7 +161,11 @@ func realMain() (exitStatus int) {
 
 	if *listen > 0 {
 		port := *listen
-		go slave.ListenForMaster(port, changeNumRequestersCh)
+		// we don't want to join until we start the listener
+		joinUp := func() {
+			reqMadeOnSecBcaster.Join(reqMadeOnSecSlaveListenerCh)
+		}
+		go slave.ListenForMaster(port, changeNumRequestersCh, reqMadeOnSecSlaveListenerCh, joinUp, INFO)
 	} else if len(slaveList) > 0 {
 		connectToSlaves(slaveList, numRequestersBcaster, reqMadeOnSecCh)
 	}
@@ -739,7 +744,6 @@ func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
 }
 
 func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
-	var msg slave.MsgFromSlave
 	buf := make([]byte, 4096) // need to handle > 4096 in Read...
 	for {
 		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -748,6 +752,7 @@ func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
 			c.Close()
 			break
 		}
+		var msg slave.MsgFromSlave
 		err = json.Unmarshal(buf[:n], &msg) // reslicing using num bytes actually read
 		if err != nil {
 			INFO.Printf("got an error from unmarshalling slave msg: %v, the data was %s", err, buf[:n])
