@@ -135,7 +135,8 @@ func realMain() (exitStatus int) {
 	exitCh := make(chan int)
 	changeNumRequestersCh := make(chan interface{})
 	changeNumRequestersListenerCh := make(chan interface{})
-	reqMadeOnSecCh := make(chan int)
+	reqMadeOnSecCh := make(chan interface{})
+	reqMadeOnSecListenerCh := make(chan interface{})
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
@@ -146,13 +147,16 @@ func realMain() (exitStatus int) {
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
+	go barsController(reqMadeOnSecListenerCh, failsOnSecCh, barsToDrawCh)
 	go requesterController(infoMsgsCh, changeNumRequestersListenerCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
 	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
 	numRequestersBcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
 	numRequestersBcaster.Join(changeNumRequestersListenerCh)
+
+	reqMadeOnSecBcaster := bcast.MakeNew(reqMadeOnSecCh, INFO)
+	reqMadeOnSecBcaster.Join(reqMadeOnSecListenerCh)
 
 	if *listen > 0 {
 		port := *listen
@@ -487,7 +491,7 @@ func decreaseThreads(
 func requesterController(
 	infoMsgsCh chan<- ncursesMsg,
 	changeNumRequestersListenerCh <-chan interface{},
-	reqMadeOnSecCh chan<- int,
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -523,7 +527,7 @@ func requester(
 	infoMsgsCh chan<- ncursesMsg,
 	shutdownChan <-chan int,
 	id int,
-	reqMadeOnSecCh chan<- int,
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -592,7 +596,7 @@ func requester(
 }
 
 func barsController(
-	reqMadeOnSecCh <-chan int,
+	reqMadeOnSecListenerCh <-chan interface{},
 	failsOnSecCh <-chan int,
 	barsToDrawCh chan<- currentBars,
 ) {
@@ -609,7 +613,8 @@ func barsController(
 
 	for {
 		select {
-		case second := <-reqMadeOnSecCh:
+		case msg := <-reqMadeOnSecListenerCh:
+			second := msg.(int)
 			requestsForSecond.IncrementAt(second)
 		case second := <-failsOnSecCh:
 			failsForSecond.IncrementAt(second)
@@ -706,7 +711,10 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 }
 
 
-func connectToSlaves(slaveList slave.Slaves, numRequestersBcaster *bcast.Bcast, reqMadeOnSecCh chan<- int) {
+func connectToSlaves(
+		slaveList slave.Slaves, 
+		numRequestersBcaster *bcast.Bcast, 
+		reqMadeOnSecCh chan<- interface{}) {
 
 	for _, slaveAddr := range slaveList {
 		INFO.Println("connecting to slave " + slaveAddr)
@@ -730,7 +738,7 @@ func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
 	}
 }
 
-func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- int){
+func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
 	var msg slave.MsgFromSlave
 	buf := make([]byte, 4096) // need to handle > 4096 in Read...
 	for {
@@ -748,7 +756,7 @@ func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- int){
 	}
 }
 
-func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- int){
+func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface{}){
 	if msg.StatsForSecond != nil {
 		for secStr := range msg.StatsForSecond {
 			secInt, pErr := strconv.ParseInt(secStr, 10, 0)
