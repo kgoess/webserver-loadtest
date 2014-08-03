@@ -151,14 +151,14 @@ func realMain() (exitStatus int) {
 	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
-	bcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
-	bcaster.Join(changeNumRequestersListenerCh)
+	numRequestersBcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
+	numRequestersBcaster.Join(changeNumRequestersListenerCh)
 
 	if *listen > 0 {
 		port := *listen
 		go slave.ListenForMaster(port, changeNumRequestersCh)
 	} else if len(slaveList) > 0 {
-		connectToSlaves(slaveList, bcaster, reqMadeOnSecCh)
+		connectToSlaves(slaveList, numRequestersBcaster, reqMadeOnSecCh)
 	}
 
 	currentScale := int64(1)
@@ -706,7 +706,7 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 }
 
 
-func connectToSlaves(slaveList slave.Slaves, bcaster *bcast.Bcast, reqMadeOnSecCh chan<- int) {
+func connectToSlaves(slaveList slave.Slaves, numRequestersBcaster *bcast.Bcast, reqMadeOnSecCh chan<- int) {
 
 	for _, slaveAddr := range slaveList {
 		INFO.Println("connecting to slave " + slaveAddr)
@@ -715,7 +715,7 @@ func connectToSlaves(slaveList slave.Slaves, bcaster *bcast.Bcast, reqMadeOnSecC
 			panic("Dial failed:" + err.Error())
 		}
 		slaveChan := make(chan interface{})
-		bcaster.Join(slaveChan)
+		numRequestersBcaster.Join(slaveChan)
 		go talkToSlave(conn, slaveChan)
 		go listenToSlave(conn, reqMadeOnSecCh)
 	}

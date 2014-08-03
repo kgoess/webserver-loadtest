@@ -99,7 +99,6 @@ func handleConnectionFromMaster(c net.Conn, changeNumRequestersCh chan interface
 		panic("can't marshal that")
 	}
 
-
 	for {
 		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, err := c.Read(buf)
