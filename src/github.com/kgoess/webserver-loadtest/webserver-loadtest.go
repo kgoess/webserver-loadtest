@@ -506,6 +506,10 @@ func requester(
 			// make the request and time it
 			t0 := time.Now()
 			resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+			if err != nil {
+				INFO.Println("get %s got an err %v", thisUrl, err)
+				continue
+			}
 			t1 := time.Now()
 			resp.Body.Close() // this only works if ! err
 
