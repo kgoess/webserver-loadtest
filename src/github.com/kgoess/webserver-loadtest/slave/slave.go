@@ -141,11 +141,8 @@ INFO.Println("about to join, our channel is ", reqMadeOnSecSlaveListenerCh)
 	for {
 		select {
 		case msg :=  <-reqMadeOnSecSlaveListenerCh:
-	INFO.Println("the slave got a reqMadeOnSecs msg from itself")
 			second := msg.(int)
-	INFO.Println("about to sendStatsToMaster ", second)
 			sendStatsToMaster(c, second)
-	INFO.Println("done sending stats to master")
 		}
 	}
 }
