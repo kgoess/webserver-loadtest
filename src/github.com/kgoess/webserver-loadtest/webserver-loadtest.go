@@ -202,7 +202,7 @@ main:
 			//}
 			//if msgAsFloat64 > 0 {
 			if msg != "      0.00" {
-				INFO.Println("bytes/sec for each request: ", msg)
+				INFO.Println("bytes/sec for each second: ", msg)
 			}
 		case exitStatus = <-exitCh:
 			break main
