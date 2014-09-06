@@ -148,9 +148,9 @@ func realMain() (exitStatus int) {
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go barsController(reqMadeOnSecListenerCh, failsOnSecCh, barsToDrawCh)
+	go barsController(reqMadeOnSecListenerCh, failsOnSecCh, barsToDrawCh, reqSecDisplayCh)
 	go requesterController(infoMsgsCh, changeNumRequestersListenerCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
-	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
+	go durationWinController(durationCh, durationDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
 	numRequestersBcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
@@ -600,19 +600,27 @@ func requester(
 	}
 }
 
+// This sends messages to both the barsToDrawCh and the durationDisplayCh--
+// so should I rename this method?
 func barsController(
 	reqMadeOnSecListenerCh <-chan interface{},
 	failsOnSecCh <-chan int,
 	barsToDrawCh chan<- currentBars,
+	reqSecDisplayCh chan<- string,
 ) {
 	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
 	failsForSecond := rb.MakeNew(INFO)    // one column for each clock second
+
+	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
 		for {
 			time.Sleep(1000 * time.Millisecond)
 			timeToRedraw <- true
+			if secsSeen <= 60 {
+				secsSeen++
+			}
 		}
 	}(timeToRedraw)
 
@@ -629,19 +637,25 @@ func barsController(
 				failsForSecond.GetArray(),
 				requestsForSecond.GetMax(),
 			}
+			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
+				requestsForSecond.GetPrevVal(),
+				// won't be accurate for first five secs
+				requestsForSecond.SumPrevN(5)/5,
+				requestsForSecond.SumPrevN(secsSeen)/
+					int64(secsSeen),
+			)
 		}
 	}
 }
 
-func statsWinsController(
+func durationWinController(
 	durationCh <-chan int64,
 	durationDisplayCh chan<- string,
-	reqSecDisplayCh chan<- string,
 ) {
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
 	lookbackSecs := 5
-	secsSeen := 0
+//	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
@@ -667,18 +681,6 @@ func statsWinsController(
 			} else {
 				durationDisplayCh <- "0"
 			}
-
-			if secsSeen <= 60 {
-				secsSeen++
-			}
-
-			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
-				countForSecond.GetPrevVal(),
-				// won't be accurate for first five secs
-				countForSecond.SumPrevN(5)/5,
-				countForSecond.SumPrevN(secsSeen)/
-					int64(secsSeen),
-			)
 		}
 	}
 }
