@@ -34,7 +34,7 @@ func (z *Slaves) String() string {
 	return fmt.Sprint(*z)
 }
 
-// The second method is Set(value string) error
+// The second method of flag.Value is Set(value string) error
 func (z *Slaves) Set(value string) error {
 	var validAddr = regexp.MustCompile(z.validIpRegex())
 
