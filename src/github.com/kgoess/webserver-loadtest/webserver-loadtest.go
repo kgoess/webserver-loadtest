@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"encoding/json"
 	"log"
 	"math/rand"
 	"net"
@@ -12,10 +12,11 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 	//"io"
-	bcast "github.com/kgoess/webserver-loadtest/bcast"
 	gc "code.google.com/p/goncurses"
+	bcast "github.com/kgoess/webserver-loadtest/bcast"
 	rb "github.com/kgoess/webserver-loadtest/ringbuffer"
 	slave "github.com/kgoess/webserver-loadtest/slave"
 )
@@ -45,9 +46,9 @@ type bytesPerSecMsg struct {
 }
 
 type SecondStats struct {
-	Second int  //redundant, since the key will be the second, maybe we won't need it
+	Second   int //redundant, since the key will be the second, maybe we won't need it
 	ReqsMade int
-	Bytes int64
+	Bytes    int64
 	Duration time.Duration
 }
 
@@ -556,7 +557,7 @@ func requester(
 		default:
 			i++
 			makeRequest(i, infoMsgsCh, shutdownChan, id, reqMadeOnSecCh, failsOnSecCh,
-			            durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
+				durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
 		}
 		if shutdownNow {
 			return
@@ -564,7 +565,7 @@ func requester(
 	}
 }
 
-func makeRequest (
+func makeRequest(
 	i int64,
 	infoMsgsCh chan<- ncursesMsg,
 	shutdownChan <-chan int,
@@ -586,7 +587,13 @@ func makeRequest (
 
 	// make the request and time it
 	t0 := time.Now()
-	resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+	if strings.Index(thisUrl, "?") > 0 {
+		thisUrl = thisUrl + "&hitid=" + hitId
+	} else {
+		thisUrl = thisUrl + "?hitid=" + hitId
+	}
+
+	resp, err := http.Get(thisUrl) // TBD make that appending conditional
 	t1 := time.Now()
 	nowSec := time.Now().Second()
 	if err != nil {
@@ -679,7 +686,7 @@ func durationWinController(
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
 	lookbackSecs := 5
-//	secsSeen := 0
+	//	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
@@ -741,11 +748,10 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 	}
 }
 
-
 func connectToSlaves(
-		slaveList slave.Slaves, 
-		numRequestersBcaster *bcast.Bcast, 
-		reqMadeOnSecCh chan<- interface{}) {
+	slaveList slave.Slaves,
+	numRequestersBcaster *bcast.Bcast,
+	reqMadeOnSecCh chan<- interface{}) {
 
 	for _, slaveAddr := range slaveList {
 		INFO.Println("connecting to slave " + slaveAddr)
@@ -769,7 +775,7 @@ func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
 	}
 }
 
-func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
+func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}) {
 	buf := make([]byte, 4096) // need to handle > 4096 in Read...
 	for {
 		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -787,7 +793,7 @@ func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
 	}
 }
 
-func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface{}){
+func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface{}) {
 	if msg.StatsForSecond != nil {
 		for secStr := range msg.StatsForSecond {
 			secInt, pErr := strconv.ParseInt(secStr, 10, 0)
@@ -798,13 +804,11 @@ func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface
 			// should make a different channel so we can pass totals? or change this channel
 			// to take a "second" and a number? this is really inefficient...
 			for i := int64(0); i < msg.StatsForSecond[secStr]; i++ {
-				reqMadeOnSecCh<- int(secInt)
+				reqMadeOnSecCh <- int(secInt)
 			}
 		}
 	}
 }
-
-
 
 /*
 259 up
