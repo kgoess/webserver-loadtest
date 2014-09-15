@@ -1,26 +1,23 @@
 package main
 
 import (
-	gc "code.google.com/p/goncurses"
-	"log"
-	//"io"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"encoding/json"
+	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
-
-	"math/rand"
-
+	//"io"
 	bcast "github.com/kgoess/webserver-loadtest/bcast"
+	gc "code.google.com/p/goncurses"
 	rb "github.com/kgoess/webserver-loadtest/ringbuffer"
+	slave "github.com/kgoess/webserver-loadtest/slave"
 )
 
 var (
@@ -47,6 +44,13 @@ type bytesPerSecMsg struct {
 	receivedOnSec int
 }
 
+type SecondStats struct {
+	Second int  //redundant, since the key will be the second, maybe we won't need it
+	ReqsMade int
+	Bytes int64
+	Duration time.Duration
+}
+
 type currentBars struct {
 	cols     []int64
 	failCols []int64
@@ -64,58 +68,7 @@ var logFile = flag.String("logfile", "./loadtest.log", "path to log file (defaul
 var listen = flag.Int("listen", 0, "listen as a client for controller commands on this port")
 var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
 
-// a slice of strings holding ip:port combos
-type slaves []string
-
-// Now, for our new type, implement the two methods of
-// the flag.Value interface...
-// String is the method to format the flag's value, part of the flag.Value interface.
-// The String method's output will be used in diagnostics.
-func (z *slaves) String() string {
-	return fmt.Sprint(*z)
-}
-
-// The second method is Set(value string) error
-func (z *slaves) Set(value string) error {
-	var validAddr = regexp.MustCompile(z.validIpRegex())
-
-	for _, ipport := range strings.Split(value, ",") {
-		if !validAddr.Match([]byte(ipport)) {
-			return errors.New("Your '" + ipport + "' doesn't look like an ip:port")
-		}
-		*z = append(*z, ipport)
-	}
-	return nil
-}
-
-func (i *slaves) validIpRegex() string {
-
-	// http://stackoverflow.com/questions/53497/regular-expression-that-matches-valid-ipv6-addresses
-	IPV4SEG := "(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])"
-	IPV4ADDR := "(" + IPV4SEG + "\\.){3,3}" + IPV4SEG
-	IPV6SEG := "[0-9a-fA-F]{1,4}"
-	fulladdr := "(" + IPV6SEG + ":){7,7}" + IPV6SEG               // 1:2:3:4:5:6:7:8
-	collapse7 := "(" + IPV6SEG + ":){1,7}:"                       // 1::                                 1:2:3:4:5:6:7::
-	collapse6 := "(" + IPV6SEG + ":){1,6}:" + IPV6SEG             // 1::8               1:2:3:4:5:6::8   1:2:3:4:5:6::8
-	collapse5 := "(" + IPV6SEG + ":){1,5}(:" + IPV6SEG + "){1,2}" // 1::7:8             1:2:3:4:5::7:8   1:2:3:4:5::8
-	collapse4 := "(" + IPV6SEG + ":){1,4}(:" + IPV6SEG + "){1,3}" // 1::6:7:8           1:2:3:4::6:7:8   1:2:3:4::8
-	collapse3 := "(" + IPV6SEG + ":){1,3}(:" + IPV6SEG + "){1,4}" // 1::5:6:7:8         1:2:3::5:6:7:8   1:2:3::8
-	collapse2 := "(" + IPV6SEG + ":){1,2}(:" + IPV6SEG + "){1,5}" // 1::4:5:6:7:8       1:2::4:5:6:7:8   1:2::8
-	collapse1 := IPV6SEG + ":((:" + IPV6SEG + "){1,6})"           // 1::3:4:5:6:7:8     1::3:4:5:6:7:8   1::8
-	collapse0 := ":((:" + IPV6SEG + "){1,7}|:)"                   // ::2:3:4:5:6:7:8    ::2:3:4:5:6:7:8  ::8       ::
-	linklocal := "fe80:(:" + IPV6SEG + "){0,4}%[0-9a-zA-Z]{1,}"   // fe80::7:8%eth0     fe80::7:8%1  (link-local IPv6 addresses with zone index)
-	ip4mapped := "::(ffff(:0{1,4}){0,1}:){0,1}" + IPV4ADDR        // ::255.255.255.255  ::ffff:255.255.255.255  ::ffff:0:255.255.255.255 (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
-	ip4embedd := "(" + IPV6SEG + ":){1,4}:" + IPV4ADDR            // 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
-	IPV6ADDR := "(" + fulladdr + "|" + collapse7 + "|" + collapse6 + "|" +
-		collapse5 + "|" + collapse4 + "|" + collapse3 + "|" + collapse2 + "|" +
-		collapse1 + "|" + collapse0 + "|" + linklocal + "|" + ip4mapped + "|" + ip4embedd + ")"
-	IPADDR := "(" + IPV4ADDR + "|" + IPV6ADDR + ")"
-
-	IPPORT := "^" + IPADDR + ":\\d+$"
-	return IPPORT
-}
-
-var slaveList slaves
+var slaveList slave.Slaves
 
 // Remember Exit(0) is success, Exit(1) is failure
 func main() {
@@ -182,7 +135,9 @@ func realMain() (exitStatus int) {
 	exitCh := make(chan int)
 	changeNumRequestersCh := make(chan interface{})
 	changeNumRequestersListenerCh := make(chan interface{})
-	reqMadeOnSecCh := make(chan int)
+	reqMadeOnSecCh := make(chan interface{})
+	reqMadeOnSecListenerCh := make(chan interface{})
+	reqMadeOnSecSlaveListenerCh := make(chan interface{})
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
@@ -193,19 +148,26 @@ func realMain() (exitStatus int) {
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
+	go barsController(reqMadeOnSecListenerCh, failsOnSecCh, barsToDrawCh, reqSecDisplayCh)
 	go requesterController(infoMsgsCh, changeNumRequestersListenerCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
-	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
+	go durationWinController(durationCh, durationDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
-	bcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
-	bcaster.Join(changeNumRequestersListenerCh)
+	numRequestersBcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
+	numRequestersBcaster.Join(changeNumRequestersListenerCh)
+
+	reqMadeOnSecBcaster := bcast.MakeNew(reqMadeOnSecCh, INFO)
+	reqMadeOnSecBcaster.Join(reqMadeOnSecListenerCh)
 
 	if *listen > 0 {
 		port := *listen
-		go listenForMaster(port, changeNumRequestersCh)
+		// we don't want to join until we start the listener
+		joinUp := func() {
+			reqMadeOnSecBcaster.Join(reqMadeOnSecSlaveListenerCh)
+		}
+		go slave.ListenForMaster(port, changeNumRequestersCh, reqMadeOnSecSlaveListenerCh, joinUp, INFO)
 	} else if len(slaveList) > 0 {
-		connectToSlaves(slaveList, bcaster)
+		connectToSlaves(slaveList, numRequestersBcaster, reqMadeOnSecCh)
 	}
 
 	currentScale := int64(1)
@@ -240,7 +202,7 @@ main:
 			//}
 			//if msgAsFloat64 > 0 {
 			if msg != "      0.00" {
-				INFO.Println("bytes/sec for each request: ", msg)
+				INFO.Println("bytes/sec for each second: ", msg)
 			}
 		case exitStatus = <-exitCh:
 			break main
@@ -539,7 +501,7 @@ func decreaseThreads(
 func requesterController(
 	infoMsgsCh chan<- ncursesMsg,
 	changeNumRequestersListenerCh <-chan interface{},
-	reqMadeOnSecCh chan<- int,
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -575,7 +537,7 @@ func requester(
 	infoMsgsCh chan<- ncursesMsg,
 	shutdownChan <-chan int,
 	id int,
-	reqMadeOnSecCh chan<- int,
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -593,49 +555,8 @@ func requester(
 			shutdownNow = true
 		default:
 			i++
-			thisUrl := testUrl
-			if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
-				thisUrlStruct, _ := url.Parse(thisUrl)
-				thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
-				thisUrl = thisUrlStruct.String()
-			}
-			hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-
-			// make the request and time it
-			t0 := time.Now()
-			resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
-			t1 := time.Now()
-			resp.Body.Close() // this only works if ! err
-
-			// report the duration
-			duration := int64(t1.Sub(t0) / time.Millisecond)
-			durationCh <- duration
-
-			// report that we made a request this second
-			nowSec := time.Now().Second()
-			reqMadeOnSecCh <- nowSec
-
-			// report on the number of bytes
-			bytesPerSecCh <- bytesPerSecMsg{
-				bytes:         resp.ContentLength,
-				duration:      time.Duration(duration),
-				receivedOnSec: nowSec,
-			}
-			if err == nil && resp.StatusCode == 200 {
-				TRACE.Println(id, "/", i, " fetch ok ")
-				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
-			} else if err != nil {
-				ERROR.Println("http get failed: ", err)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			} else {
-				ERROR.Println("http get failed: ", resp.Status)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			}
-
-			// just for development
-			time.Sleep(10 * time.Millisecond)
+			makeRequest(i, infoMsgsCh, shutdownChan, id, reqMadeOnSecCh, failsOnSecCh,
+			            durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
 		}
 		if shutdownNow {
 			return
@@ -643,25 +564,94 @@ func requester(
 	}
 }
 
+func makeRequest (
+	i int64,
+	infoMsgsCh chan<- ncursesMsg,
+	shutdownChan <-chan int,
+	id int,
+	reqMadeOnSecCh chan<- interface{},
+	failsOnSecCh chan<- int,
+	durationCh chan<- int64,
+	bytesPerSecCh chan<- bytesPerSecMsg,
+	testUrl string,
+	introduceRandomFails int,
+) {
+	thisUrl := testUrl
+	if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
+		thisUrlStruct, _ := url.Parse(thisUrl)
+		thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
+		thisUrl = thisUrlStruct.String()
+	}
+	hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
+
+	// make the request and time it
+	t0 := time.Now()
+	resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+	t1 := time.Now()
+	nowSec := time.Now().Second()
+	if err != nil {
+		ERROR.Println("http get failed: ", err)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+		return
+	}
+	resp.Body.Close() // this only works if ! err
+
+	// report the duration
+	duration := int64(t1.Sub(t0) / time.Millisecond)
+	durationCh <- duration
+
+	// report that we made a request this second
+	reqMadeOnSecCh <- nowSec
+
+	// report on the number of bytes
+	bytesPerSecCh <- bytesPerSecMsg{
+		bytes:         resp.ContentLength,
+		duration:      time.Duration(duration),
+		receivedOnSec: nowSec,
+	}
+	if resp.StatusCode == 200 {
+		TRACE.Println(id, "/", i, " fetch ok ")
+		// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
+	} else {
+		ERROR.Println("http get failed: ", resp.Status)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+	}
+
+	// just for development
+	time.Sleep(10 * time.Millisecond)
+
+}
+
+// This sends messages to both the barsToDrawCh and the durationDisplayCh--
+// so should I rename this method?
 func barsController(
-	reqMadeOnSecCh <-chan int,
+	reqMadeOnSecListenerCh <-chan interface{},
 	failsOnSecCh <-chan int,
 	barsToDrawCh chan<- currentBars,
+	reqSecDisplayCh chan<- string,
 ) {
 	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
 	failsForSecond := rb.MakeNew(INFO)    // one column for each clock second
+
+	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
 		for {
 			time.Sleep(1000 * time.Millisecond)
 			timeToRedraw <- true
+			if secsSeen <= 60 {
+				secsSeen++
+			}
 		}
 	}(timeToRedraw)
 
 	for {
 		select {
-		case second := <-reqMadeOnSecCh:
+		case msg := <-reqMadeOnSecListenerCh:
+			second := msg.(int)
 			requestsForSecond.IncrementAt(second)
 		case second := <-failsOnSecCh:
 			failsForSecond.IncrementAt(second)
@@ -671,19 +661,25 @@ func barsController(
 				failsForSecond.GetArray(),
 				requestsForSecond.GetMax(),
 			}
+			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
+				requestsForSecond.GetPrevVal(),
+				// won't be accurate for first five secs
+				requestsForSecond.SumPrevN(5)/5,
+				requestsForSecond.SumPrevN(secsSeen)/
+					int64(secsSeen),
+			)
 		}
 	}
 }
 
-func statsWinsController(
+func durationWinController(
 	durationCh <-chan int64,
 	durationDisplayCh chan<- string,
-	reqSecDisplayCh chan<- string,
 ) {
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
 	lookbackSecs := 5
-	secsSeen := 0
+//	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
@@ -709,18 +705,6 @@ func statsWinsController(
 			} else {
 				durationDisplayCh <- "0"
 			}
-
-			if secsSeen <= 60 {
-				secsSeen++
-			}
-
-			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
-				countForSecond.GetPrevVal(),
-				// won't be accurate for first five secs
-				countForSecond.SumPrevN(5)/5,
-				countForSecond.SumPrevN(secsSeen)/
-					int64(secsSeen),
-			)
 		}
 	}
 }
@@ -757,22 +741,11 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 	}
 }
 
-func listenForMaster(port int, changeNumRequestersCh chan interface{}) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		log.Fatal(err)
-	}
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		go handleConnection(conn, changeNumRequestersCh)
-	}
-}
 
-func connectToSlaves(slaveList slaves, bcaster *bcast.Bcast) {
+func connectToSlaves(
+		slaveList slave.Slaves, 
+		numRequestersBcaster *bcast.Bcast, 
+		reqMadeOnSecCh chan<- interface{}) {
 
 	for _, slaveAddr := range slaveList {
 		INFO.Println("connecting to slave " + slaveAddr)
@@ -781,8 +754,9 @@ func connectToSlaves(slaveList slaves, bcaster *bcast.Bcast) {
 			panic("Dial failed:" + err.Error())
 		}
 		slaveChan := make(chan interface{})
-		bcaster.Join(slaveChan)
+		numRequestersBcaster.Join(slaveChan)
 		go talkToSlave(conn, slaveChan)
+		go listenToSlave(conn, reqMadeOnSecCh)
 	}
 }
 
@@ -792,15 +766,11 @@ func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
 		case msg := <-changeNumRequestersSlaveCh:
 			fmt.Fprintf(conn, "%d", msg)
 		}
-
 	}
-
 }
 
-func handleConnection(c net.Conn, changeNumRequestersCh chan interface{}) {
-	buf := make([]byte, 4096)
-	okbuf := []byte("ok")
-
+func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
+	buf := make([]byte, 4096) // need to handle > 4096 in Read...
 	for {
 		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, err := c.Read(buf)
@@ -808,23 +778,33 @@ func handleConnection(c net.Conn, changeNumRequestersCh chan interface{}) {
 			c.Close()
 			break
 		}
-
-		//n, err = c.Write(buf[0:n])
-		delta := string(buf[:n])
-		requesterDelta, err := strconv.ParseInt(delta, 10, 0)
+		var msg slave.MsgFromSlave
+		err = json.Unmarshal(buf[:n], &msg) // reslicing using num bytes actually read
 		if err != nil {
-			INFO.Println("got a wonky message from the network: %s (%s)", delta, requesterDelta)
-			break
+			INFO.Printf("got an error from unmarshalling slave msg: %v, the data was %s", err, buf[:n])
 		}
-		changeNumRequestersCh <- int(requesterDelta)
-		n, err = c.Write(okbuf)
-		if err != nil {
-			c.Close()
-			break
+		processMsgFromSlave(msg, reqMadeOnSecCh)
+	}
+}
+
+func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface{}){
+	if msg.StatsForSecond != nil {
+		for secStr := range msg.StatsForSecond {
+			secInt, pErr := strconv.ParseInt(secStr, 10, 0)
+			if pErr != nil {
+				INFO.Printf("couldn't parse sec '%s' in msg from slave: %s, %v", secStr, pErr, msg)
+				continue
+			}
+			// should make a different channel so we can pass totals? or change this channel
+			// to take a "second" and a number? this is really inefficient...
+			for i := int64(0); i < msg.StatsForSecond[secStr]; i++ {
+				reqMadeOnSecCh<- int(secInt)
+			}
 		}
 	}
-	log.Printf("Connection from %v closed.", c.RemoteAddr())
 }
+
+
 
 /*
 259 up

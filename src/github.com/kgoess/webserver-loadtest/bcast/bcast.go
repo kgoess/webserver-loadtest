@@ -21,12 +21,14 @@ func MakeNew (incomingCh <-chan interface{}, infoLog *log.Logger) *Bcast {
     bcaster := new(Bcast)
     bcaster.incomingCh = incomingCh
 
+	INFO = infoLog
     go bcaster.ListenOnIncoming()
 
     return bcaster
 }
 
 func (b *Bcast) ListenOnIncoming() {
+
     for {
         select {
         case msg := <-b.incomingCh:
