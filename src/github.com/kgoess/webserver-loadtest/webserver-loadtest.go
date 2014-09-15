@@ -1,21 +1,23 @@
 package main
 
 import (
-	gc "code.google.com/p/goncurses"
-	"log"
-	//"io"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"encoding/json"
+	"log"
+	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
-
-	"math/rand"
-
+	//"io"
+	bcast "github.com/kgoess/webserver-loadtest/bcast"
+	gc "code.google.com/p/goncurses"
 	rb "github.com/kgoess/webserver-loadtest/ringbuffer"
+	slave "github.com/kgoess/webserver-loadtest/slave"
 )
 
 var (
@@ -42,6 +44,13 @@ type bytesPerSecMsg struct {
 	receivedOnSec int
 }
 
+type SecondStats struct {
+	Second int  //redundant, since the key will be the second, maybe we won't need it
+	ReqsMade int
+	Bytes int64
+	Duration time.Duration
+}
+
 type currentBars struct {
 	cols     []int64
 	failCols []int64
@@ -56,12 +65,21 @@ type colorsDefined struct {
 
 var testUrl = flag.String("url", "", "the url you want to beat on")
 var logFile = flag.String("logfile", "./loadtest.log", "path to log file (default loadtest.log)")
+var listen = flag.Int("listen", 0, "listen as a client for controller commands on this port")
 var introduceRandomFails = flag.Int("random-fails", 0, "introduce x/10 random failures")
+
+var slaveList slave.Slaves
 
 // Remember Exit(0) is success, Exit(1) is failure
 func main() {
+	flag.Var(&slaveList, "control", "list of ip:port addresses to control")
 	flag.Parse()
 	if len(*testUrl) == 0 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	if len(slaveList) > 0 && *listen != 0 {
+		fmt.Fprintf(os.Stderr, "You can't have both --listen and --control flags")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -89,12 +107,25 @@ func main() {
 	os.Exit(realMain())
 }
 
+type resetScreenFn func()
+
 // Why realMain? See https://groups.google.com/forum/#!topic/golang-nuts/_Twwb5ULStM
 // So that defer will run propoerly
-func realMain() int {
+func realMain() (exitStatus int) {
 
 	// initialize ncurses
-	stdscr, colors := initializeNcurses()
+	stdscr, colors, resetScreen := initializeNcurses()
+
+	// clean up the screen before we die
+	defer func() {
+		if err := recover(); err != nil {
+			resetScreen()
+			fmt.Fprintf(os.Stderr, "exiting from error: %s \n", err)
+			ERROR.Println("exiting from error: ", err)
+			exitStatus = 1
+			os.Exit(1)
+		}
+	}()
 
 	// draw the stuff on the screen
 	msgWin, workerCountWin, durWin, reqSecWin, barsWin, scaleWin, maxWin := drawDisplay(stdscr)
@@ -102,8 +133,11 @@ func realMain() int {
 	// create our various channels
 	infoMsgsCh := make(chan ncursesMsg)
 	exitCh := make(chan int)
-	changeNumRequestersCh := make(chan int)
-	reqMadeOnSecCh := make(chan int)
+	changeNumRequestersCh := make(chan interface{})
+	changeNumRequestersListenerCh := make(chan interface{})
+	reqMadeOnSecCh := make(chan interface{})
+	reqMadeOnSecListenerCh := make(chan interface{})
+	reqMadeOnSecSlaveListenerCh := make(chan interface{})
 	failsOnSecCh := make(chan int)
 	durationCh := make(chan int64)
 	durationDisplayCh := make(chan string)
@@ -114,12 +148,28 @@ func realMain() int {
 
 	// start all the worker goroutines
 	go windowRunloop(infoMsgsCh, exitCh, changeNumRequestersCh, msgWin)
-	go requesterController(infoMsgsCh, changeNumRequestersCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
-	go barsController(reqMadeOnSecCh, failsOnSecCh, barsToDrawCh)
-	go statsWinsController(durationCh, durationDisplayCh, reqSecDisplayCh)
+	go barsController(reqMadeOnSecListenerCh, failsOnSecCh, barsToDrawCh, reqSecDisplayCh)
+	go requesterController(infoMsgsCh, changeNumRequestersListenerCh, reqMadeOnSecCh, failsOnSecCh, durationCh, bytesPerSecCh, *testUrl, *introduceRandomFails)
+	go durationWinController(durationCh, durationDisplayCh)
 	go bytesPerSecController(bytesPerSecCh, bytesPerSecDisplayCh)
 
-	var exitStatus int
+	numRequestersBcaster := bcast.MakeNew(changeNumRequestersCh, INFO)
+	numRequestersBcaster.Join(changeNumRequestersListenerCh)
+
+	reqMadeOnSecBcaster := bcast.MakeNew(reqMadeOnSecCh, INFO)
+	reqMadeOnSecBcaster.Join(reqMadeOnSecListenerCh)
+
+	if *listen > 0 {
+		port := *listen
+		// we don't want to join until we start the listener
+		joinUp := func() {
+			reqMadeOnSecBcaster.Join(reqMadeOnSecSlaveListenerCh)
+		}
+		go slave.ListenForMaster(port, changeNumRequestersCh, reqMadeOnSecSlaveListenerCh, joinUp, INFO)
+	} else if len(slaveList) > 0 {
+		connectToSlaves(slaveList, numRequestersBcaster, reqMadeOnSecCh)
+	}
+
 	currentScale := int64(1)
 
 	// This is the main loop controlling the ncurses display. Since ncurses
@@ -146,7 +196,14 @@ main:
 			scaleWin.NoutRefresh()
 			updateBarsWin(msg, barsWin, *colors, currentScale)
 		case msg := <-bytesPerSecDisplayCh:
-			INFO.Println("bytes/sec for each request: ", msg)
+			//msgAsFloat64, err := strconv.ParseFloat(msg, 64)
+			//if err != nil {
+			//    panic(fmt.Sprintf("converting %s failed: %v", msg, err))
+			//}
+			//if msgAsFloat64 > 0 {
+			if msg != "      0.00" {
+				INFO.Println("bytes/sec for each second: ", msg)
+			}
 		case exitStatus = <-exitCh:
 			break main
 		}
@@ -172,13 +229,16 @@ func calculateScale(max int64) int64 {
 	return rc
 }
 
-func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined) {
+func initializeNcurses() (stdscr *gc.Window, colors *colorsDefined, resetScreen resetScreenFn) {
 
 	stdscr, err := gc.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer gc.End()
+	resetScreen = func() {
+		gc.End()
+	}
 
 	// Turn off character echo, hide the cursor and disable input buffering
 	gc.Echo(false)
@@ -398,7 +458,7 @@ func shouldShowFail(numFailsThisSec int64, scale int64, rowNum int) bool {
 func windowRunloop(
 	infoMsgsCh chan<- ncursesMsg,
 	exitCh chan<- int,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 ) {
 	threadCount := 0
@@ -418,7 +478,7 @@ func windowRunloop(
 
 func increaseThreads(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -429,7 +489,7 @@ func increaseThreads(
 
 func decreaseThreads(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh chan<- int,
+	changeNumRequestersCh chan<- interface{},
 	win *gc.Window,
 	threadCount int,
 ) {
@@ -440,8 +500,8 @@ func decreaseThreads(
 
 func requesterController(
 	infoMsgsCh chan<- ncursesMsg,
-	changeNumRequestersCh <-chan int,
-	reqMadeOnSecCh chan<- int,
+	changeNumRequestersListenerCh <-chan interface{},
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -455,7 +515,7 @@ func requesterController(
 
 	for {
 		select {
-		case upOrDown := <-changeNumRequestersCh:
+		case upOrDown := <-changeNumRequestersListenerCh:
 			if upOrDown == 1 {
 				shutdownChan := make(chan int)
 				chans = append(chans, shutdownChan)
@@ -477,7 +537,7 @@ func requester(
 	infoMsgsCh chan<- ncursesMsg,
 	shutdownChan <-chan int,
 	id int,
-	reqMadeOnSecCh chan<- int,
+	reqMadeOnSecCh chan<- interface{},
 	failsOnSecCh chan<- int,
 	durationCh chan<- int64,
 	bytesPerSecCh chan<- bytesPerSecMsg,
@@ -495,53 +555,8 @@ func requester(
 			shutdownNow = true
 		default:
 			i++
-			thisUrl := testUrl
-			if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
-				thisUrlStruct, _ := url.Parse(thisUrl)
-				thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
-				thisUrl = thisUrlStruct.String()
-			}
-			hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-
-			// make the request and time it
-			t0 := time.Now()
-			resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
-			if err != nil {
-				INFO.Println("get %s got an err %v", thisUrl, err)
-				continue
-			}
-			t1 := time.Now()
-			resp.Body.Close() // this only works if ! err
-
-			// report the duration
-			duration := int64(t1.Sub(t0) / time.Millisecond)
-			durationCh <- duration
-
-			// report that we made a request this second
-			nowSec := time.Now().Second()
-			reqMadeOnSecCh <- nowSec
-
-			// report on the number of bytes
-			bytesPerSecCh <- bytesPerSecMsg{
-				bytes:         resp.ContentLength,
-				duration:      time.Duration(duration),
-				receivedOnSec: nowSec,
-			}
-			if err == nil && resp.StatusCode == 200 {
-				TRACE.Println(id, "/", i, " fetch ok ")
-				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
-			} else if err != nil {
-				ERROR.Println("http get failed: ", err)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			} else {
-				ERROR.Println("http get failed: ", resp.Status)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			}
-
-			// just for development
-			//time.Sleep(10 * time.Millisecond)
+			makeRequest(i, infoMsgsCh, shutdownChan, id, reqMadeOnSecCh, failsOnSecCh,
+			            durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
 		}
 		if shutdownNow {
 			return
@@ -549,25 +564,94 @@ func requester(
 	}
 }
 
+func makeRequest (
+	i int64,
+	infoMsgsCh chan<- ncursesMsg,
+	shutdownChan <-chan int,
+	id int,
+	reqMadeOnSecCh chan<- interface{},
+	failsOnSecCh chan<- int,
+	durationCh chan<- int64,
+	bytesPerSecCh chan<- bytesPerSecMsg,
+	testUrl string,
+	introduceRandomFails int,
+) {
+	thisUrl := testUrl
+	if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
+		thisUrlStruct, _ := url.Parse(thisUrl)
+		thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
+		thisUrl = thisUrlStruct.String()
+	}
+	hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
+
+	// make the request and time it
+	t0 := time.Now()
+	resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+	t1 := time.Now()
+	nowSec := time.Now().Second()
+	if err != nil {
+		ERROR.Println("http get failed: ", err)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+		return
+	}
+	resp.Body.Close() // this only works if ! err
+
+	// report the duration
+	duration := int64(t1.Sub(t0) / time.Millisecond)
+	durationCh <- duration
+
+	// report that we made a request this second
+	reqMadeOnSecCh <- nowSec
+
+	// report on the number of bytes
+	bytesPerSecCh <- bytesPerSecMsg{
+		bytes:         resp.ContentLength,
+		duration:      time.Duration(duration),
+		receivedOnSec: nowSec,
+	}
+	if resp.StatusCode == 200 {
+		TRACE.Println(id, "/", i, " fetch ok ")
+		// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
+	} else {
+		ERROR.Println("http get failed: ", resp.Status)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+	}
+
+	// just for development
+	time.Sleep(10 * time.Millisecond)
+
+}
+
+// This sends messages to both the barsToDrawCh and the durationDisplayCh--
+// so should I rename this method?
 func barsController(
-	reqMadeOnSecCh <-chan int,
+	reqMadeOnSecListenerCh <-chan interface{},
 	failsOnSecCh <-chan int,
 	barsToDrawCh chan<- currentBars,
+	reqSecDisplayCh chan<- string,
 ) {
 	requestsForSecond := rb.MakeNew(INFO) // one column for each clock second
 	failsForSecond := rb.MakeNew(INFO)    // one column for each clock second
+
+	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
 		for {
 			time.Sleep(1000 * time.Millisecond)
 			timeToRedraw <- true
+			if secsSeen <= 60 {
+				secsSeen++
+			}
 		}
 	}(timeToRedraw)
 
 	for {
 		select {
-		case second := <-reqMadeOnSecCh:
+		case msg := <-reqMadeOnSecListenerCh:
+			second := msg.(int)
 			requestsForSecond.IncrementAt(second)
 		case second := <-failsOnSecCh:
 			failsForSecond.IncrementAt(second)
@@ -577,19 +661,25 @@ func barsController(
 				failsForSecond.GetArray(),
 				requestsForSecond.GetMax(),
 			}
+			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
+				requestsForSecond.GetPrevVal(),
+				// won't be accurate for first five secs
+				requestsForSecond.SumPrevN(5)/5,
+				requestsForSecond.SumPrevN(secsSeen)/
+					int64(secsSeen),
+			)
 		}
 	}
 }
 
-func statsWinsController(
+func durationWinController(
 	durationCh <-chan int64,
 	durationDisplayCh chan<- string,
-	reqSecDisplayCh chan<- string,
 ) {
 	totalDurForSecond := rb.MakeNew(INFO) // total durations for each clock second
 	countForSecond := rb.MakeNew(INFO)    // how many received per second
 	lookbackSecs := 5
-	secsSeen := 0
+//	secsSeen := 0
 
 	timeToRedraw := make(chan bool)
 	go func(timeToRedraw chan bool) {
@@ -615,18 +705,6 @@ func statsWinsController(
 			} else {
 				durationDisplayCh <- "0"
 			}
-
-			if secsSeen <= 60 {
-				secsSeen++
-			}
-
-			reqSecDisplayCh <- fmt.Sprintf("%d/%2.2d/%2.2d",
-				countForSecond.GetPrevVal(),
-				// won't be accurate for first five secs
-				countForSecond.SumPrevN(5)/5,
-				countForSecond.SumPrevN(secsSeen)/
-					int64(secsSeen),
-			)
 		}
 	}
 }
@@ -661,8 +739,72 @@ func bytesPerSecController(bytesPerSecCh <-chan bytesPerSecMsg, bytesPerSecDispl
 		}
 
 	}
-
 }
+
+
+func connectToSlaves(
+		slaveList slave.Slaves, 
+		numRequestersBcaster *bcast.Bcast, 
+		reqMadeOnSecCh chan<- interface{}) {
+
+	for _, slaveAddr := range slaveList {
+		INFO.Println("connecting to slave " + slaveAddr)
+		conn, err := net.Dial("tcp", slaveAddr)
+		if err != nil {
+			panic("Dial failed:" + err.Error())
+		}
+		slaveChan := make(chan interface{})
+		numRequestersBcaster.Join(slaveChan)
+		go talkToSlave(conn, slaveChan)
+		go listenToSlave(conn, reqMadeOnSecCh)
+	}
+}
+
+func talkToSlave(conn net.Conn, changeNumRequestersSlaveCh <-chan interface{}) {
+	for {
+		select {
+		case msg := <-changeNumRequestersSlaveCh:
+			fmt.Fprintf(conn, "%d", msg)
+		}
+	}
+}
+
+func listenToSlave(c net.Conn, reqMadeOnSecCh chan<- interface{}){
+	buf := make([]byte, 4096) // need to handle > 4096 in Read...
+	for {
+		//c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, err := c.Read(buf)
+		if err != nil || n == 0 {
+			c.Close()
+			break
+		}
+		var msg slave.MsgFromSlave
+		err = json.Unmarshal(buf[:n], &msg) // reslicing using num bytes actually read
+		if err != nil {
+			INFO.Printf("got an error from unmarshalling slave msg: %v, the data was %s", err, buf[:n])
+		}
+		processMsgFromSlave(msg, reqMadeOnSecCh)
+	}
+}
+
+func processMsgFromSlave(msg slave.MsgFromSlave, reqMadeOnSecCh chan<- interface{}){
+	if msg.StatsForSecond != nil {
+		for secStr := range msg.StatsForSecond {
+			secInt, pErr := strconv.ParseInt(secStr, 10, 0)
+			if pErr != nil {
+				INFO.Printf("couldn't parse sec '%s' in msg from slave: %s, %v", secStr, pErr, msg)
+				continue
+			}
+			// should make a different channel so we can pass totals? or change this channel
+			// to take a "second" and a number? this is really inefficient...
+			for i := int64(0); i < msg.StatsForSecond[secStr]; i++ {
+				reqMadeOnSecCh<- int(secInt)
+			}
+		}
+	}
+}
+
+
 
 /*
 259 up
