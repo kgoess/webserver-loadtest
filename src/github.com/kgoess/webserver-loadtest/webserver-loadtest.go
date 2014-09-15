@@ -550,54 +550,73 @@ func requester(
 			shutdownNow = true
 		default:
 			i++
-			thisUrl := testUrl
-			if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
-				thisUrlStruct, _ := url.Parse(thisUrl)
-				thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
-				thisUrl = thisUrlStruct.String()
-			}
-			hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
-
-			// make the request and time it
-			t0 := time.Now()
-			resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
-			t1 := time.Now()
-			resp.Body.Close() // this only works if ! err
-
-			// report the duration
-			duration := int64(t1.Sub(t0) / time.Millisecond)
-			durationCh <- duration
-
-			// report that we made a request this second
-			nowSec := time.Now().Second()
-			reqMadeOnSecCh <- nowSec
-
-			// report on the number of bytes
-			bytesPerSecCh <- bytesPerSecMsg{
-				bytes:         resp.ContentLength,
-				duration:      time.Duration(duration),
-				receivedOnSec: nowSec,
-			}
-			if err == nil && resp.StatusCode == 200 {
-				TRACE.Println(id, "/", i, " fetch ok ")
-				// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
-			} else if err != nil {
-				ERROR.Println("http get failed: ", err)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			} else {
-				ERROR.Println("http get failed: ", resp.Status)
-				infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
-				failsOnSecCh <- nowSec
-			}
-
-			// just for development
-			time.Sleep(10 * time.Millisecond)
+			makeRequest(i, infoMsgsCh, shutdownChan, id, reqMadeOnSecCh, failsOnSecCh,
+			            durationCh, bytesPerSecCh, testUrl, introduceRandomFails)
 		}
 		if shutdownNow {
 			return
 		}
 	}
+}
+
+func makeRequest (
+	i int64,
+	infoMsgsCh chan<- ncursesMsg,
+	shutdownChan <-chan int,
+	id int,
+	reqMadeOnSecCh chan<- interface{},
+	failsOnSecCh chan<- int,
+	durationCh chan<- int64,
+	bytesPerSecCh chan<- bytesPerSecMsg,
+	testUrl string,
+	introduceRandomFails int,
+) {
+	thisUrl := testUrl
+	if introduceRandomFails > 0 && rand.Intn(10) < introduceRandomFails {
+		thisUrlStruct, _ := url.Parse(thisUrl)
+		thisUrlStruct.Path = "-artificial-random-failure-" + thisUrlStruct.Path
+		thisUrl = thisUrlStruct.String()
+	}
+	hitId := strconv.FormatInt(int64(id), 10) + ":" + strconv.FormatInt(i, 10)
+
+	// make the request and time it
+	t0 := time.Now()
+	resp, err := http.Get(thisUrl + "?" + hitId) // TBD make that appending conditional
+	t1 := time.Now()
+	nowSec := time.Now().Second()
+	if err != nil {
+		ERROR.Println("http get failed: ", err)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+		return
+	}
+	resp.Body.Close() // this only works if ! err
+
+	// report the duration
+	duration := int64(t1.Sub(t0) / time.Millisecond)
+	durationCh <- duration
+
+	// report that we made a request this second
+	reqMadeOnSecCh <- nowSec
+
+	// report on the number of bytes
+	bytesPerSecCh <- bytesPerSecMsg{
+		bytes:         resp.ContentLength,
+		duration:      time.Duration(duration),
+		receivedOnSec: nowSec,
+	}
+	if resp.StatusCode == 200 {
+		TRACE.Println(id, "/", i, " fetch ok ")
+		// TMI! infoMsgsCh <- ncursesMsg{"request ok " + hitId, -1, MSG_TYPE_RESULT}
+	} else {
+		ERROR.Println("http get failed: ", resp.Status)
+		infoMsgsCh <- ncursesMsg{"request fail " + hitId, -1, MSG_TYPE_RESULT}
+		failsOnSecCh <- nowSec
+	}
+
+	// just for development
+	time.Sleep(10 * time.Millisecond)
+
 }
 
 // This sends messages to both the barsToDrawCh and the durationDisplayCh--
